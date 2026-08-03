@@ -9,7 +9,8 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 - **架构**：botgo 长连接事件驱动 + 内置 HTTP 服务（事件上报 + LumiAdmin 回调预留）
 - **事件系统**：外部系统（LumiForum / LumiAdmin / 游戏服务器监控）通过 `POST /api/v1/events` 上报事件，经 Event Bus 分发到 QQ 通知等订阅者
 - **通知系统**：事件经规则判断（`internal/rule`）→ 模板渲染 → 冷却防刷 → QQ 私聊/频道通知（详见 [docs/NOTIFICATION.md](docs/NOTIFICATION.md)）
-- **当前阶段**：通知系统（事件 → 管理员 QQ 通知）
+- **接入层**：统一 API（`/api/v1/events`）+ API Key 认证 + 限流保护 + 对外 Go SDK 接口（详见 [docs/API.md](docs/API.md)）
+- **当前阶段**：外部系统接入层（LumiAdmin / LumiForum / GameMonitor 事件接收）
 
 ```
 ┌──────────────┐   POST /api/message/send（预留）   ┌──────────────┐
@@ -50,9 +51,11 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   └── handler.go         # Handler 接口 + 函数式适配器
 │   ├── rule/                  # 通知规则系统（事件类型 + 级别 → 是否通知）
 │   ├── notification/          # 通知系统：模型 / 模板 / 冷却 / 服务（事件 → QQ 通知）
-│   └── api/                   # HTTP 服务：/health + /api/v1/events（事件上报）
+│   ├── auth/                  # API 保护：X-API-Key 认证中间件 + 限流器（预留 Redis）
+│   └── api/                   # HTTP 服务：/health + /api/v1/events（认证→限流→处理）
+├── pkg/sdk/                   # 对外 Go SDK 接口预留（LumiAdmin / LumiForum 等接入用）
 ├── configs/                   # 配置模板
-├── docs/                      # 架构 / CI / API 文档
+├── docs/                      # 架构 / CI / API / 通知文档
 └── README.md
 ```
 

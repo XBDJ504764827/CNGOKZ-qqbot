@@ -22,6 +22,7 @@
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
 | `BOT_DEBUG` | 否 | `false` | 机器人调试模式，开启 SDK 调试输出（生产环境保持 `false`） |
 | `EVENT_API_KEYS` | 否 | 空（拒绝所有） | 事件上报接口 API Key，逗号分隔多个；未配置时 fail-closed |
+| `EVENT_RATE_LIMIT` | 否 | `100` | 单来源（API Key）每分钟事件上报次数上限（`0` 表示不限制） |
 | `NOTIFICATION_ENABLE` | 否 | `true` | 是否启用通知（事件 → QQ 通知） |
 | `NOTICE_COOLDOWN` | 否 | `300` | 通知冷却时间（秒），同一事件类型窗口内重复事件只通知一次 |
 | `NOTIFY_PRIVATE_TARGET` | 否 | 空（跳过私聊通知） | QQ_PRIVATE 渠道目标：管理员 QQ openid |

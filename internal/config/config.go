@@ -73,6 +73,11 @@ type EventConfig struct {
 	// APIKeys 事件上报接口（POST /api/v1/events）允许的 API Key 列表，
 	// 逗号分隔配置于 EVENT_API_KEYS。未配置时拒绝所有上报请求（fail-closed）。
 	APIKeys []string
+	// RateLimit 单来源（API Key）每分钟允许的事件上报次数（EVENT_RATE_LIMIT），
+	// 防止异常系统大量发送事件。
+	RateLimit int
+	// RateWindow 限流时间窗口（固定 1 分钟）。
+	RateWindow time.Duration
 }
 
 // NotificationConfig 通知系统配置。
@@ -119,7 +124,9 @@ func Load() (*Config, error) {
 			IdleTimeout:  getDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
 		Event: EventConfig{
-			APIKeys: getStringSlice("EVENT_API_KEYS"),
+			APIKeys:    getStringSlice("EVENT_API_KEYS"),
+			RateLimit:  getInt("EVENT_RATE_LIMIT", 100),
+			RateWindow: time.Minute,
 		},
 		Notification: NotificationConfig{
 			Enable:        getBool("NOTIFICATION_ENABLE", true),
@@ -185,6 +192,19 @@ func getStringSlice(key string) []string {
 		}
 	}
 	return out
+}
+
+// getInt 读取整型环境变量，非法或未设置时使用默认值。
+func getInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 // getSecondsDuration 读取整秒数时长环境变量（如 "300"），非法或未设置时使用默认值。
