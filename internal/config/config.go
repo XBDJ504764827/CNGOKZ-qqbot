@@ -1,0 +1,151 @@
+// Package config 负责加载 LumiBot 的全部运行配置。
+//
+// 配置来源优先级（高 → 低）：
+//  1. 进程环境变量
+//  2. .env 文件（默认读取项目根目录 .env）
+//  3. 内置默认值（集中定义于本包，禁止在业务代码中散落硬编码）
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
+	"github.com/joho/godotenv"
+)
+
+// Env 运行环境。
+type Env string
+
+const (
+	// EnvDev 开发环境，连接 QQ 沙箱网关。
+	EnvDev Env = "dev"
+	// EnvProd 生产环境，连接 QQ 正式网关。
+	EnvProd Env = "prod"
+)
+
+// Config 汇总全部配置项。
+type Config struct {
+	// Env 运行环境，决定连接沙箱还是正式 QQ 网关。
+	Env Env
+	// Bot QQ 官方机器人接入配置。
+	Bot BotConfig
+	// HTTP 内置 HTTP 服务配置（供 LumiAdmin 回调）。
+	HTTP HTTPConfig
+	// Log 日志配置。
+	Log LogConfig
+}
+
+// BotConfig QQ 官方机器人接入配置。
+type BotConfig struct {
+	// AppID QQ 开放平台机器人 AppID。
+	AppID string
+	// Token 机器人 Token（预留：旧式 BotToken 鉴权，新式鉴权使用 Secret）。
+	Token string
+	// Secret 机器人 AppSecret，用于新式 oauth2 鉴权。
+	Secret string
+	// Debug 是否开启 SDK 调试模式（BOT_DEBUG），输出更多过程日志。
+	Debug bool
+	// Timeout openapi 请求超时时间。
+	Timeout time.Duration
+}
+
+// HTTPConfig 内置 HTTP 服务配置。
+type HTTPConfig struct {
+	// Addr HTTP 监听地址，如 ":8080"。
+	Addr string
+	// ReadTimeout 读请求超时。
+	ReadTimeout time.Duration
+	// WriteTimeout 写响应超时。
+	WriteTimeout time.Duration
+	// IdleTimeout 空闲连接超时。
+	IdleTimeout time.Duration
+}
+
+// LogConfig 日志配置。
+type LogConfig struct {
+	// Level 日志级别：debug / info / warn / error。
+	Level string
+	// Format 输出格式：console（开发友好）/ json（生产采集）。
+	Format string
+}
+
+// Load 加载配置：.env 文件提供默认值，同名环境变量优先。
+func Load() (*Config, error) {
+	// .env 文件不存在时忽略错误，纯环境变量方式仍可正常工作。
+	_ = godotenv.Load()
+
+	env := Env(getEnv("ENV", string(EnvDev)))
+
+	cfg := &Config{
+		Env: env,
+		Bot: BotConfig{
+			AppID:   getEnv("QQ_APP_ID", ""),
+			Token:   getEnv("QQ_TOKEN", ""),
+			Secret:  getEnv("QQ_SECRET", ""),
+			Debug:   getBool("BOT_DEBUG", false),
+			Timeout: getDuration("QQ_OPENAPI_TIMEOUT", 5*time.Second),
+		},
+		HTTP: HTTPConfig{
+			Addr:         getEnv("HTTP_ADDR", ":8080"),
+			ReadTimeout:  getDuration("HTTP_READ_TIMEOUT", 5*time.Second),
+			WriteTimeout: getDuration("HTTP_WRITE_TIMEOUT", 10*time.Second),
+			IdleTimeout:  getDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
+		},
+		Log: LogConfig{
+			Level:  getEnv("LOG_LEVEL", "info"),
+			Format: logFormat(env),
+		},
+	}
+
+	if env != EnvDev && env != EnvProd {
+		return nil, fmt.Errorf("ENV 取值非法 %q，仅支持 %q / %q", env, EnvDev, EnvProd)
+	}
+	if cfg.Bot.AppID == "" || cfg.Bot.Secret == "" {
+		return nil, fmt.Errorf("缺少必填配置 QQ_APP_ID / QQ_SECRET，请通过 .env 文件或环境变量提供")
+	}
+	return cfg, nil
+}
+
+// logFormat 根据运行环境推导日志格式：生产环境 JSON，开发环境 console。
+func logFormat(env Env) string {
+	if env == EnvProd {
+		return "json"
+	}
+	return "console"
+}
+
+// getEnv 读取环境变量，未设置或为空时返回默认值。
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// getBool 读取布尔型环境变量（true/false/1/0），未设置或解析失败时返回默认值。
+func getBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+// getDuration 读取时长型环境变量（如 "5s"、"30s"），解析失败时使用默认值。
+func getDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
+}

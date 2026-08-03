@@ -1,0 +1,13 @@
+# 构建上下文排除项
+.git
+docs
+docker
+*.md
+.env
+.env.*
+bin
+tmp
+Dockerfile
+docker-compose.yml
+.dockerignore
+.gitignore
