@@ -7,7 +7,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 
 - **定位**：CNGOKZ 社区在 QQ 平台的服务入口，负责事件通知、管理员提醒与机器人指令
 - **架构**：botgo 长连接事件驱动 + 内置 HTTP 服务（供 LumiAdmin 后台回调）
-- **当前阶段**：第一阶段 —— 基础架构初始化（配置 / 日志 / 事件注册 / HTTP 预留 / Docker）
+- **当前阶段**：CI 自动化 + 核心能力接入（配置 / 日志 / 事件 / 消息收发 / CI）
 
 ```
 ┌──────────────┐   POST /api/message/send（预留）   ┌──────────────┐
@@ -23,6 +23,10 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 
 ```
 .
+├── .github/
+│   └── workflows/
+│       └── ci.yml             # CI 工作流（gofmt / vet / golangci-lint / test）
+├── .golangci.yml               # golangci-lint 配置
 ├── cmd/
 │   └── bot/
 │       └── main.go            # 入口：依赖装配与生命周期管理
@@ -39,10 +43,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   └── receiver.go        # 消息接收处理
 │   └── api/                   # 内置 HTTP 服务（/health，LumiAdmin 预留）
 ├── configs/                   # 配置模板
-├── docker/                    # Docker 部署说明
-├── docs/                      # 架构文档
-├── Dockerfile
-├── docker-compose.yml
+├── docs/                      # 架构 / CI 文档
 └── README.md
 ```
 
@@ -51,8 +52,8 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 | 依赖 | 版本 |
 | --- | --- |
 | Go | 1.24+ |
-| Docker / docker compose | 任意近期版本（可选，容器化部署） |
 | QQ 开放平台机器人 | 已创建并获取 AppID / Secret |
+| systemd（生产） | 任意主流发行版 |
 
 ## QQ 机器人启动流程
 
@@ -110,16 +111,20 @@ curl http://127.0.0.1:8080/health
 # {"status":"ok"}
 ```
 
-## Docker 运行
+## 生产部署（二进制 + systemd）
+
+本项目采用传统二进制部署，不使用 Docker / Kubernetes：
 
 ```bash
-cp configs/.env.example .env   # 填写 QQ_APP_ID / QQ_SECRET
-docker compose up -d           # 构建并启动
-docker compose logs -f         # 查看日志
-docker compose down            # 停止
-```
+# 1. 构建
+CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o lumibot ./cmd/bot
 
-容器启动后同样通过 `http://127.0.0.1:8080/health` 验证。
+# 2. 上传到服务器 /opt/lumibot/，并放置 .env
+scp lumibot user@server:/opt/lumibot/
+
+# 3. systemd 管理（服务模板见 docs/CI.md）
+systemctl enable --now lumibot
+```
 
 ## QQ 机器人配置说明
 
@@ -141,9 +146,9 @@ docker compose down            # 停止
 | 第三阶段 | 指令系统：解析消息 → 指令路由 → 回复（通过 `message.Receiver` 扩展） |
 | 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
-| 第六阶段 | 运维完善：指标采集、分布式 session 管理、CI/CD |
+| 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |
 
-详细设计见 [docs/architecture.md](docs/architecture.md) 与 [docker/README.md](docker/README.md)。
+CI 流程、分支规范与 Branch Protection 配置见 [docs/CI.md](docs/CI.md)，架构设计见 [docs/architecture.md](docs/architecture.md)。
 
 ## License
 
