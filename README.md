@@ -8,7 +8,8 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 - **定位**：CNGOKZ 社区在 QQ 平台的服务入口，同时也是**社区事件通知中心**
 - **架构**：botgo 长连接事件驱动 + 内置 HTTP 服务（事件上报 + LumiAdmin 回调预留）
 - **事件系统**：外部系统（LumiForum / LumiAdmin / 游戏服务器监控）通过 `POST /api/v1/events` 上报事件，经 Event Bus 分发到 QQ 通知等订阅者
-- **当前阶段**：统一事件系统（事件总线 + HTTP 上报 API + 通知处理器预留）
+- **通知系统**：事件经规则判断（`internal/rule`）→ 模板渲染 → 冷却防刷 → QQ 私聊/频道通知（详见 [docs/NOTIFICATION.md](docs/NOTIFICATION.md)）
+- **当前阶段**：通知系统（事件 → 管理员 QQ 通知）
 
 ```
 ┌──────────────┐   POST /api/message/send（预留）   ┌──────────────┐
@@ -47,7 +48,8 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   ├── types.go           # Event 模型 + 事件类型 / 级别常量
 │   │   ├── bus.go             # 内存事件总线（预留 Redis Pub/Sub 扩展）
 │   │   └── handler.go         # Handler 接口 + 函数式适配器
-│   ├── notification/          # 通知处理器（监听关键事件，未来发 QQ 通知）
+│   ├── rule/                  # 通知规则系统（事件类型 + 级别 → 是否通知）
+│   ├── notification/          # 通知系统：模型 / 模板 / 冷却 / 服务（事件 → QQ 通知）
 │   └── api/                   # HTTP 服务：/health + /api/v1/events（事件上报）
 ├── configs/                   # 配置模板
 ├── docs/                      # 架构 / CI / API 文档
@@ -120,6 +122,19 @@ Notification Handler（internal/notification：当前记录日志，未来发 QQ
 - **事件模型**：`source` / `event_type` / `level` / `title` / `message` / `data`，完整说明见 [docs/API.md](docs/API.md)
 - **关键事件**：`SYSTEM_WARNING`、`SERVER_OFFLINE`、`FORUM_REPORT_CREATED` 已被通知处理器订阅
 - **安全**：`X-API-Key` 校验（`EVENT_API_KEYS` 配置，未配置时拒绝所有上报）
+
+## 通知系统
+
+事件自动转换为管理员可读的 QQ 通知：
+
+```
+Event → 规则判断（rule）→ 模板渲染（template）→ 冷却防刷（cooldown）→ QQ 发送（message.Sender）
+```
+
+- **支持事件**：`SERVER_OFFLINE` / `SERVER_ONLINE` / `SYSTEM_WARNING` / `FORUM_REPORT_CREATED`（`ADMIN_ACTION` 默认关闭）
+- **通知渠道**：`QQ_PRIVATE`（管理员私聊，需配置 `NOTIFY_PRIVATE_TARGET`）/ `QQ_CHANNEL`（频道），EMAIL / WEBHOOK 预留
+- **防刷**：`NOTICE_COOLDOWN`（秒）内同一事件类型只通知一次，内存实现，预留 Redis
+- **模板**：每事件独立模板（`internal/notification/template.go`），缺失字段安全兜底
 
 ## 开发说明
 

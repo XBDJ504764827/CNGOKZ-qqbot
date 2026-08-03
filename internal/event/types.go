@@ -22,6 +22,7 @@ const (
 	EventAdminAction        = "ADMIN_ACTION"         // LumiAdmin 管理操作
 	EventForumReportCreated = "FORUM_REPORT_CREATED" // LumiForum 新举报
 	EventServerOffline      = "SERVER_OFFLINE"       // 游戏服务器离线
+	EventServerOnline       = "SERVER_ONLINE"        // 游戏服务器恢复
 	EventSystemWarning      = "SYSTEM_WARNING"       // 系统警告
 )
 

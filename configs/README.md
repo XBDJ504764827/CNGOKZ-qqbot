@@ -22,6 +22,10 @@
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
 | `BOT_DEBUG` | 否 | `false` | 机器人调试模式，开启 SDK 调试输出（生产环境保持 `false`） |
 | `EVENT_API_KEYS` | 否 | 空（拒绝所有） | 事件上报接口 API Key，逗号分隔多个；未配置时 fail-closed |
+| `NOTIFICATION_ENABLE` | 否 | `true` | 是否启用通知（事件 → QQ 通知） |
+| `NOTICE_COOLDOWN` | 否 | `300` | 通知冷却时间（秒），同一事件类型窗口内重复事件只通知一次 |
+| `NOTIFY_PRIVATE_TARGET` | 否 | 空（跳过私聊通知） | QQ_PRIVATE 渠道目标：管理员 QQ openid |
+| `NOTIFY_CHANNEL_TARGET` | 否 | 空 | QQ_CHANNEL 渠道目标：子频道 ID |
 
 > 优先级：进程环境变量 > `.env` 文件 > 默认值。`.env` 文件仅作为默认值来源，
 > 同名环境变量始终覆盖文件中的值。
