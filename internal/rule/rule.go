@@ -60,6 +60,12 @@ func New(defaultCooldown time.Duration) *Rules {
 			Cooldown:  defaultCooldown,
 		},
 		{
+			EventType: event.EventWhitelistRequestCreated,
+			MinLevel:  event.LevelWarning, // LumiAdmin 上报级别为 warning
+			Enabled:   true,
+			Cooldown:  defaultCooldown,
+		},
+		{
 			EventType: event.EventAdminAction,
 			MinLevel:  event.LevelError,
 			Enabled:   false, // 管理操作默认不通知（审计用途），未来按需开启

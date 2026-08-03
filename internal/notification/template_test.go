@@ -53,6 +53,7 @@ func TestRender_AllEventTypes(t *testing.T) {
 		{event.EventSystemWarning, "系统警告", "[系统警告]"},
 		{event.EventForumReportCreated, "论坛举报", "[论坛举报]"},
 		{event.EventAdminAction, "管理操作", "[管理操作]"},
+		{event.EventWhitelistRequestCreated, "新白名单申请", "[新白名单申请]"},
 	}
 	for _, tc := range cases {
 		ev := testEvent(tc.eventType, "t", "m", map[string]interface{}{"server": "KZ-01"})
@@ -62,6 +63,26 @@ func TestRender_AllEventTypes(t *testing.T) {
 		}
 		if !strings.Contains(content, tc.wantTag) {
 			t.Errorf("[%s] content missing %q:\n%s", tc.eventType, tc.wantTag, content)
+		}
+	}
+}
+
+// TestRender_WhitelistRequest 验证白名单申请模板渲染（联调用例）。
+func TestRender_WhitelistRequest(t *testing.T) {
+	tmpl := NewTemplates()
+	ev := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "玩家 张三 提交了白名单申请，等待审核", map[string]interface{}{
+		"nickname":  "张三",
+		"steamid64": "76561198000000001",
+		"contact":   "QQ 12345",
+	})
+
+	title, content := tmpl.Render(ev)
+	if title != "新白名单申请" {
+		t.Errorf("title = %q, want 新白名单申请", title)
+	}
+	for _, want := range []string{"[新白名单申请]", "玩家: 张三", "SteamID: 76561198000000001", "联系方式: QQ 12345", "请管理员审核。"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("content missing %q:\n%s", want, content)
 		}
 	}
 }

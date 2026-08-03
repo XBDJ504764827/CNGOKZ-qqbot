@@ -31,6 +31,7 @@ Notification Service（internal/notification/service.go）
 | `SERVER_ONLINE` | 服务器恢复 | info | `NOTICE_COOLDOWN` | 游戏服务器恢复 |
 | `SYSTEM_WARNING` | 系统警告 | warning | `NOTICE_COOLDOWN` | 系统资源 / 服务告警 |
 | `FORUM_REPORT_CREATED` | 论坛举报 | warning | `NOTICE_COOLDOWN` | 论坛新举报 |
+| `WHITELIST_REQUEST_CREATED` | 新白名单申请 | warning | `NOTICE_COOLDOWN` | LumiAdmin 白名单新申请（data：nickname / steamid64 / contact） |
 | `ADMIN_ACTION` | 管理操作 | error | 无 | 审计用途，**默认不通知**（规则 `Enabled=false`） |
 
 规则要点：

@@ -52,6 +52,8 @@
 
 ### 事件类型列表（event_type）
 
+**通用事件：**
+
 | 事件类型 | 适用来源 | 级别建议 | 说明 | 默认通知 |
 | --- | --- | --- | --- | --- |
 | `SYSTEM_WARNING` | LumiAdmin | warning | 系统警告（磁盘、资源等） | ✅ |
@@ -59,9 +61,35 @@
 | `SERVER_ONLINE` | GameMonitor | info | 服务器恢复 | ✅ |
 | `FORUM_REPORT_CREATED` | LumiForum | warning | 论坛新举报 | ✅ |
 | `ADMIN_ACTION` | LumiAdmin | info | 管理操作记录 | ❌（默认仅记录） |
+| `WHITELIST_REQUEST_CREATED` | LumiAdmin | warning | 白名单新申请（等待审核） | ✅ |
+
+**论坛通知事件（LumiForum 站内通知 → QQ，对应 LumiForum `NotificationEvent`）：**
+
+| 事件类型 | 对应站内事件 | 级别建议 | 默认通知 | data 约定字段 |
+| --- | --- | --- | --- | --- |
+| `FORUM_COMMENT_REPLIED` | CommentReplied | info | ✅ | `target_openid` `topic_title` `actor_name` `topic_id` `topic_slug` `comment_id` |
+| `FORUM_COMMENT_CREATED` | CommentCreated | info | ✅ | `target_openid` `topic_title` `actor_name` `topic_id` `topic_slug` `comment_id` |
+| `FORUM_TOPIC_LIKED` | TopicLiked | info | ✅ | `target_openid` `topic_title` `actor_name` `topic_id` `topic_slug` |
+| `FORUM_COMMENT_LIKED` | CommentLiked | info | ✅ | `target_openid` `topic_title` `actor_name` `topic_id` `comment_id` |
+| `FORUM_TOPIC_FAVORITED` | TopicFavorited | info | ✅ | `target_openid` `topic_title` `actor_name` `topic_id` `topic_slug` |
+| `FORUM_USER_FOLLOWED` | UserFollowed | info | ✅ | `target_openid` `actor_name` |
+| `FORUM_POLL_VOTED` | PollVoted | info | ✅ | `target_openid` `topic_title` `poll_title` `actor_name` `topic_id` `topic_slug` |
+| `FORUM_REPORT_PROCESSED` | ReportProcessed | warning | ✅ | `target_openid` `report_id` `result` |
 
 > 其他事件类型可自由上报（必填字段校验通过即可），LumiBot 全部接收并记录日志；
 > 是否触发 QQ 通知由通知规则决定（见 docs/NOTIFICATION.md）。
+
+### 通知目标指定（data 约定）
+
+通知发给谁由 `data.target_openid` 指定（网站管理员在后台配置用户 QQ 绑定后，由网站写入）：
+
+| data 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `target_openid` | string | 否 | 接收通知的 QQ 用户 openid；**省略时发给默认管理员**（LumiBot 配置 `NOTIFY_PRIVATE_TARGET`） |
+| `actor_name` | string | 否 | 触发动作的用户昵称（模板展示用） |
+| `topic_title` | string | 否 | 主题标题（模板展示用） |
+| `topic_id` / `topic_slug` / `comment_id` / `poll_title` / `report_id` / `result` | string | 否 | 业务标识与结果（模板展示用） |
+| 其他 | 任意 | 否 | 自定义字段，LumiBot 原样保留 |
 
 ### 统一响应格式
 

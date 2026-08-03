@@ -66,6 +66,18 @@ var builtinTemplates = map[string]eventTemplate{
 
 {{.Message}}`,
 	},
+	event.EventWhitelistRequestCreated: {
+		title: "新白名单申请",
+		body: `[新白名单申请]
+
+玩家: {{get .Data "nickname"}}
+SteamID: {{get .Data "steamid64"}}
+联系方式: {{get .Data "contact"}}
+时间: {{.TimeText}}
+
+{{.Message}}
+请管理员审核。`,
+	},
 }
 
 // fallbackTemplate 通用兜底模板（事件类型无专属模板或专属模板渲染失败时使用）。
