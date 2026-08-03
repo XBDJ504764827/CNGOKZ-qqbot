@@ -1,7 +1,7 @@
 # LumiBot HTTP API 文档
 
-本文档面向外部系统（LumiForum / LumiAdmin / 游戏服务器监控等），
-说明如何向 LumiBot 上报社区事件。
+本文档面向 CNGOKZ 生态外部系统（**LumiAdmin / LumiForum / GameMonitor**），
+说明如何向 LumiBot（事件接收中心）上报事件。
 
 ## 接口总览
 
@@ -20,7 +20,7 @@
 | Header | 必填 | 说明 |
 | --- | --- | --- |
 | `Content-Type` | 是 | `application/json` |
-| `X-API-Key` | 是 | 服务端配置的 `EVENT_API_KEYS` 之一（逗号分隔可配置多个） |
+| `X-API-Key` | 是 | 服务端分配的 API Key（见「安全设计」） |
 
 ### 请求 Body（统一事件模型）
 
@@ -42,7 +42,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | string | 否 | 事件唯一标识（UUID），省略时服务端生成 |
-| `source` | string | **是** | 事件来源系统，如 `LumiForum` / `LumiAdmin` / `GameServer` / `QQ` |
+| `source` | string | **是** | 事件来源系统：`LumiAdmin` / `LumiForum` / `GameMonitor` / `QQ` |
 | `event_type` | string | **是** | 事件类型，取值见下表 |
 | `level` | string | 否 | `info` / `warning` / `error` / `critical` |
 | `timestamp` | string (RFC3339) | 否 | 事件发生时间 |
@@ -52,60 +52,129 @@
 
 ### 事件类型列表（event_type）
 
-| 事件类型 | 来源 | 级别建议 | 说明 |
-| --- | --- | --- | --- |
-| `SYSTEM_WARNING` | LumiAdmin | warning | 系统警告（磁盘、资源等） |
-| `SERVER_OFFLINE` | GameServer | critical | 游戏服务器离线 |
-| `FORUM_REPORT_CREATED` | LumiForum | warning | 论坛新举报 |
-| `ADMIN_ACTION` | LumiAdmin | info | 管理操作记录 |
+| 事件类型 | 适用来源 | 级别建议 | 说明 | 默认通知 |
+| --- | --- | --- | --- | --- |
+| `SYSTEM_WARNING` | LumiAdmin | warning | 系统警告（磁盘、资源等） | ✅ |
+| `SERVER_OFFLINE` | GameMonitor | critical | CS / KZ 服务器离线 | ✅ |
+| `SERVER_ONLINE` | GameMonitor | info | 服务器恢复 | ✅ |
+| `FORUM_REPORT_CREATED` | LumiForum | warning | 论坛新举报 | ✅ |
+| `ADMIN_ACTION` | LumiAdmin | info | 管理操作记录 | ❌（默认仅记录） |
 
-> 其他事件类型可自由上报，LumiBot 全部接收并记录日志；
-> 上述类型已被通知处理器订阅（未来触发 QQ 通知）。
+> 其他事件类型可自由上报（必填字段校验通过即可），LumiBot 全部接收并记录日志；
+> 是否触发 QQ 通知由通知规则决定（见 docs/NOTIFICATION.md）。
 
-### 响应
+### 统一响应格式
 
-成功（202 Accepted）：
+**成功（HTTP 202 Accepted）：**
 
 ```json
 {
-  "status": "accepted",
+  "success": true,
   "event_id": "5f9d4c2a-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 }
 ```
 
-失败：
+**失败（HTTP 400 / 401 / 429 / 500）：**
 
-| 状态码 | 场景 | 响应体 |
-| --- | --- | --- |
-| `400` | JSON 解析失败 / 缺少必填字段 / level 非法 | `{"error":"..."}` |
-| `401` | API Key 缺失或错误 | `{"error":"unauthorized"}` |
-| `500` | 事件发布失败 | `{"error":"event publish failed"}` |
+```json
+{
+  "success": false,
+  "error": "错误原因"
+}
+```
+
+| HTTP 状态 | 场景 |
+| --- | --- |
+| `202` | 事件受理成功 |
+| `400` | 参数错误（JSON 解析失败 / 缺少必填字段 / level 非法） |
+| `401` | 认证失败（X-API-Key 缺失或错误，或服务端未配置 Key） |
+| `429` | 触发限流（单来源超过 `EVENT_RATE_LIMIT` 次/分钟） |
+| `500` | 服务器内部错误（事件发布失败） |
 
 ### 调用示例
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/v1/events \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: test-key" \
+  -H "X-API-Key: key-monitor" \
   -d '{
-    "source": "GameServer",
+    "source": "GameMonitor",
     "event_type": "SERVER_OFFLINE",
     "level": "critical",
     "title": "游戏服务器离线",
-    "message": "mc-01 心跳超时，请尽快处理",
-    "data": {"server": "mc-01", "region": "cn"}
+    "message": "KZ-01 心跳超时，请尽快处理",
+    "data": {"server": "KZ-01", "region": "cn"}
   }'
 ```
 
-服务端日志输出示例：
+成功响应：
+
+```json
+{"success": true, "event_id": "5f9d4c2a-xxxx-xxxx-xxxx-xxxxxxxxxxxx"}
+```
+
+服务端日志：
 
 ```
-INFO  event received  {"event_id": "...", "source": "GameServer", "event_type": "SERVER_OFFLINE", "level": "critical"}
-INFO  收到事件，准备发送QQ通知（通知发送待后续阶段实现）  {"event_id": "...", "source": "GameServer", "event_type": "SERVER_OFFLINE", ...}
+INFO  event received  {"event_id": "...", "source": "GameMonitor", "event_type": "SERVER_OFFLINE", "level": "critical"}
+INFO  notification sent  {"notification_id": "...", "event_id": "...", "event_type": "SERVER_OFFLINE", "send_status": "sent", "channel": "QQ_PRIVATE"}
 ```
 
-## 安全说明
+## 2. 外部系统接入流程
 
-- 当前阶段：`X-API-Key` 简单校验（配置于 `EVENT_API_KEYS`，逗号分隔多个 Key）
-- **未配置 Key 时拒绝所有上报请求**（fail-closed，防止误暴露）
-- 后续扩展：JWT、请求签名验证、IP 白名单
+```
+LumiAdmin / LumiForum / GameMonitor
+        │  HTTP POST /api/v1/events（X-API-Key）
+        ▼
+    LumiBot（事件接收中心）
+        │
+        ▼
+   Event Bus → Notification → QQ 管理员
+```
+
+1. **获取 API Key**：联系 LumiBot 管理员，在 `EVENT_API_KEYS` 中分配专属 Key
+   （建议每个系统独立：`key-admin` / `key-forum` / `key-monitor`）
+2. **确认事件协议**：按上表选择 `source` / `event_type` / `level` 及 `data` 字段
+3. **上报事件**：调用 `POST /api/v1/events`，校验 `success=true` 即受理成功
+4. **后续接入**：Go 项目可直接使用预留 SDK（`pkg/sdk`，见下文）
+
+## 3. Go SDK（预留）
+
+`pkg/sdk` 提供官方 Go SDK 接口设计（后续版本提供 HTTP 实现），
+外部系统可提前按协议常量接入：
+
+```go
+import "github.com/XBDJ504764827/LumiBot/pkg/sdk"
+
+// 协议常量：sdk.EventServerOffline / sdk.SourceGameMonitor / sdk.LevelCritical ...
+req := &sdk.SendEventRequest{
+    Source:    sdk.SourceGameMonitor,
+    EventType: sdk.EventServerOffline,
+    Level:     sdk.LevelCritical,
+    Title:     "游戏服务器离线",
+    Message:   "KZ-01 心跳超时",
+    Data:      map[string]interface{}{"server": "KZ-01"},
+}
+// client := sdk.NewHTTPClient("http://127.0.0.1:8080", "key-monitor") // 下一阶段提供
+// resp, err := client.SendEvent(ctx, req)
+```
+
+## 4. 安全设计
+
+| 层次 | 机制 | 配置 |
+| --- | --- | --- |
+| 认证 | `X-API-Key` Header 校验（支持多 Key，分别分配给不同系统） | `EVENT_API_KEYS=key-admin,key-forum,key-monitor` |
+| 限流 | 按 API Key 固定窗口限流（默认 100 次/分钟，`0` 关闭） | `EVENT_RATE_LIMIT=100` |
+| 兜底 | 未配置任何 Key 时拒绝所有请求（fail-closed） | - |
+
+- 当前阶段：简单 API Key 校验；后续扩展 JWT、HMAC 签名验证、IP 白名单
+- 限流与冷却的区别：限流保护 API（防异常系统刷请求）；冷却去重通知（防重复骚扰管理员）
+
+## 5. 错误排查
+
+| 现象 | 可能原因 |
+| --- | --- |
+| 401 `invalid api key` | Key 错误 / 未配置 `EVENT_API_KEYS` |
+| 429 `rate limit exceeded` | 单来源超过每分钟上限，等待窗口重置或调大 `EVENT_RATE_LIMIT` |
+| 400 `source 不能为空` | 缺少必填字段，检查请求 Body |
+| 202 但未收到 QQ 通知 | 事件类型未订阅 / 规则未命中 / 通知开关关闭 / 冷却期内（查看服务端日志） |

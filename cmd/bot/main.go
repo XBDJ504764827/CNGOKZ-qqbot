@@ -55,12 +55,14 @@ func main() {
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
-	// 统一事件系统：Event Bus + 通知处理器（订阅关键事件）
+	// 统一事件系统：Event Bus + 通知服务（订阅关键事件，规则/模板/冷却见 internal/notification）
 	eventBus := event.NewMemoryBus(zapLogger)
-	notifyHandler := notification.NewHandler(zapLogger)
-	eventBus.Subscribe(event.EventSystemWarning, notifyHandler)
-	eventBus.Subscribe(event.EventServerOffline, notifyHandler)
-	eventBus.Subscribe(event.EventForumReportCreated, notifyHandler)
+	notifyService := notification.NewService(cfg.Notification, sender, zapLogger)
+	eventBus.Subscribe(event.EventSystemWarning, notifyService)
+	eventBus.Subscribe(event.EventServerOffline, notifyService)
+	eventBus.Subscribe(event.EventServerOnline, notifyService)
+	eventBus.Subscribe(event.EventForumReportCreated, notifyService)
+	eventBus.Subscribe(event.EventAdminAction, notifyService)
 
 	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus)
 

@@ -36,6 +36,8 @@ type Config struct {
 	HTTP HTTPConfig
 	// Event 统一事件系统配置。
 	Event EventConfig
+	// Notification 通知系统配置。
+	Notification NotificationConfig
 	// Log 日志配置。
 	Log LogConfig
 }
@@ -71,6 +73,24 @@ type EventConfig struct {
 	// APIKeys 事件上报接口（POST /api/v1/events）允许的 API Key 列表，
 	// 逗号分隔配置于 EVENT_API_KEYS。未配置时拒绝所有上报请求（fail-closed）。
 	APIKeys []string
+	// RateLimit 单来源（API Key）每分钟允许的事件上报次数（EVENT_RATE_LIMIT），
+	// 防止异常系统大量发送事件。
+	RateLimit int
+	// RateWindow 限流时间窗口（固定 1 分钟）。
+	RateWindow time.Duration
+}
+
+// NotificationConfig 通知系统配置。
+type NotificationConfig struct {
+	// Enable 是否启用通知（NOTIFICATION_ENABLE）。
+	Enable bool
+	// Cooldown 全局默认通知冷却时间（NOTICE_COOLDOWN，单位秒），
+	// 同一事件类型在窗口内的重复事件只通知一次。
+	Cooldown time.Duration
+	// PrivateTarget QQ_PRIVATE 渠道目标：管理员 QQ openid（NOTIFY_PRIVATE_TARGET）。
+	PrivateTarget string
+	// ChannelTarget QQ_CHANNEL 渠道目标：子频道 ID（NOTIFY_CHANNEL_TARGET）。
+	ChannelTarget string
 }
 
 // LogConfig 日志配置。
@@ -104,7 +124,15 @@ func Load() (*Config, error) {
 			IdleTimeout:  getDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
 		Event: EventConfig{
-			APIKeys: getStringSlice("EVENT_API_KEYS"),
+			APIKeys:    getStringSlice("EVENT_API_KEYS"),
+			RateLimit:  getInt("EVENT_RATE_LIMIT", 100),
+			RateWindow: time.Minute,
+		},
+		Notification: NotificationConfig{
+			Enable:        getBool("NOTIFICATION_ENABLE", true),
+			Cooldown:      getSecondsDuration("NOTICE_COOLDOWN", 300*time.Second),
+			PrivateTarget: getEnv("NOTIFY_PRIVATE_TARGET", ""),
+			ChannelTarget: getEnv("NOTIFY_CHANNEL_TARGET", ""),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
@@ -164,6 +192,32 @@ func getStringSlice(key string) []string {
 		}
 	}
 	return out
+}
+
+// getInt 读取整型环境变量，非法或未设置时使用默认值。
+func getInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}
+
+// getSecondsDuration 读取整秒数时长环境变量（如 "300"），非法或未设置时使用默认值。
+func getSecondsDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return time.Duration(n) * time.Second
 }
 
 // getDuration 读取时长型环境变量（如 "5s"、"30s"），解析失败时使用默认值。

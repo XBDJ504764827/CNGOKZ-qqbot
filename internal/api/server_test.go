@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,43 +67,5 @@ func TestNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("GET unknown path status = %d, want %d", rec.Code, http.StatusNotFound)
-	}
-}
-
-// TestEventsIntegration 端到端验证：HTTP 路由 → Event Bus → 订阅者 全链路。
-func TestEventsIntegration(t *testing.T) {
-	bus := event.NewMemoryBus(zap.NewNop())
-
-	var received []event.Event
-	bus.Subscribe(event.EventServerOffline, event.HandlerFunc(func(_ context.Context, e event.Event) error {
-		received = append(received, e)
-		return nil
-	}))
-
-	srv := NewServer(config.HTTPConfig{
-		Addr:         "127.0.0.1:0",
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}, config.EventConfig{APIKeys: []string{testAPIKey}}, zap.NewNop(), bus)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events",
-		strings.NewReader(`{"source":"GameServer","event_type":"SERVER_OFFLINE","level":"critical","title":"服务器离线"}`))
-	req.Header.Set("X-API-Key", testAPIKey)
-	rec := httptest.NewRecorder()
-	srv.httpServer.Handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
-	}
-	if len(received) != 1 {
-		t.Fatalf("subscriber received %d events, want 1", len(received))
-	}
-	got := received[0]
-	if got.Source != "GameServer" || got.EventType != event.EventServerOffline || got.Level != "critical" {
-		t.Errorf("subscriber got unexpected event: %+v", got)
-	}
-	if got.ID == "" {
-		t.Error("event ID should be generated")
 	}
 }

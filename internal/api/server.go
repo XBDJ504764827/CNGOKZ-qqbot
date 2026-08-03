@@ -15,6 +15,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/XBDJ504764827/LumiBot/internal/auth"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 )
@@ -25,7 +26,7 @@ type Server struct {
 	logger     *zap.Logger
 }
 
-// NewServer 构建 HTTP 服务并注册路由（依赖注入：事件总线 + API Key 配置）。
+// NewServer 构建 HTTP 服务并注册路由（依赖注入：事件总线 + 事件 API 配置）。
 func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.Logger, bus event.Bus) *Server {
 	mux := http.NewServeMux()
 
@@ -33,8 +34,18 @@ func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.L
 	mux.HandleFunc("GET /health", handleHealth)
 
 	// 外部系统事件上报（统一事件系统入口）
-	eventsHandler := NewEventsHandler(bus, eventCfg.APIKeys, logger)
-	mux.Handle("POST /api/v1/events", eventsHandler)
+	// 中间件链：认证（X-API-Key）→ 限流（按 Key）→ 业务 Handler
+	rateWindow := eventCfg.RateWindow
+	if rateWindow <= 0 {
+		rateWindow = time.Minute // 兜底：未配置时固定 1 分钟窗口
+	}
+	var events http.Handler = NewEventsHandler(bus, logger)
+	events = auth.RateLimitMiddleware(
+		auth.NewMemoryRateLimiter(eventCfg.RateLimit, rateWindow),
+		logger,
+	)(events)
+	events = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(events)
+	mux.Handle("POST /api/v1/events", events)
 
 	// 预留：LumiAdmin 通知推送
 	// mux.HandleFunc("POST /api/message/send", s.handleMessageSend)

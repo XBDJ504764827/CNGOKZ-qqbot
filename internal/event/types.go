@@ -16,22 +16,7 @@ const (
 	LevelCritical = "critical" // 严重，需要立即处理
 )
 
-// 已知事件类型（外部系统约定的协议常量）。
-// 完整说明见 docs/API.md。
-const (
-	EventAdminAction        = "ADMIN_ACTION"         // LumiAdmin 管理操作
-	EventForumReportCreated = "FORUM_REPORT_CREATED" // LumiForum 新举报
-	EventServerOffline      = "SERVER_OFFLINE"       // 游戏服务器离线
-	EventSystemWarning      = "SYSTEM_WARNING"       // 系统警告
-)
-
-// 事件来源（Source）。
-const (
-	SourceLumiForum  = "LumiForum"
-	SourceLumiAdmin  = "LumiAdmin"
-	SourceGameServer = "GameServer"
-	SourceQQ         = "QQ"
-)
+// 事件类型与来源常量集中管理于 catalog.go。
 
 // Event 统一事件模型，是外部系统与 LumiBot 之间的数据协议。
 //
