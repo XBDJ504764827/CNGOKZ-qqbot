@@ -14,10 +14,15 @@ main (cmd/bot)
  ├── config.Load()          → *config.Config
  ├── logger.New()           → *zap.Logger
  │     └── NewBotgoAdapter  → botgo.SetLogger（SDK 日志统一）
- ├── handler.NewDefaultHandler(logger)   → handler.Handler
- ├── bot.NewClient(cfg, logger, handler) → bot.Client
- │     └── RegisterEvents(handler, logger) → dto.Intent
- └── api.NewServer(cfg.HTTP, logger)     → api.Server
+ ├── bot.NewOpenAPI(cfg)    → openapi.OpenAPI（沙箱/正式 + BOT_DEBUG）
+ ├── message.NewSender(api) → *message.Sender（频道/群/私聊发送）
+ ├── message.NewReceiver()  → *message.Receiver（消息接收处理）
+ ├── bot.NewHandler(...)    → *bot.Handler（QQ 事件业务分发）
+ ├── bot.NewClient(...)     → *bot.Client
+ │     └── Start：WS 网关信息 → RegisterEvents → Gateway.Start（自动重连）
+ ├── event.NewMemoryBus()   → *event.MemoryBus（统一事件总线）
+ ├── notification.NewHandler() → 订阅 SYSTEM_WARNING / SERVER_OFFLINE / FORUM_REPORT_CREATED
+ └── api.NewServer(cfg, bus)     → api.Server（/health + /api/v1/events）
 ```
 
 ## 3. 配置系统
@@ -51,23 +56,35 @@ QQ 网关 ──websocket──▶ botgo SDK ──▶ internal/bot/event.go（�
 | `SendGroupMessage` | 群消息 | LumiAdmin 通知 |
 | `SendC2CMessage` | 私聊 / 管理员通知 | LumiAdmin 通知 |
 
-## 6. HTTP 服务（LumiAdmin 预留）
+## 6. HTTP 服务
 
 | 路由 | 方法 | 当前状态 | 用途 |
 | --- | --- | --- | --- |
 | `/health` | GET | ✅ 已实现 | 健康检查 |
+| `/api/v1/events` | POST | ✅ 已实现 | 外部系统事件上报（X-API-Key 鉴权） |
 | `/api/message/send` | POST | ⏳ 预留 | LumiAdmin 推送管理员通知 |
 
-预留接口规划：请求鉴权（签名 / token）、消息体校验（管理员 ID、内容）、
-复用 bot 层 OpenAPI 客户端发送群 / 私聊消息、失败重试与审计日志。
+## 7. 统一事件系统
 
-## 7. 日志规范
+```
+外部系统 → POST /api/v1/events（X-API-Key）
+        → api/events.go（解析 JSON → Validate → Normalize）
+        → event.Bus（接口；MemoryBus 实现，预留 Redis Pub/Sub）
+        → 订阅者（event.Handler；同类型多订阅者）
+        → notification.Handler（当前日志，未来 QQ 通知）
+```
+
+- **接口隔离**：`event.Bus` / `event.Handler` / `event.Subscription` 均为接口，业务层不依赖具体实现
+- **扩展点**：新增订阅者实现 `event.Handler` 后 `bus.Subscribe(type, handler)` 即可；多实例部署时替换 `RedisBus` 实现，业务代码不变
+- **安全**：`X-API-Key` 简单校验（`EVENT_API_KEYS`，fail-closed）；后续扩展 JWT / 签名验证
+
+## 8. 日志规范
 
 - 业务日志：zap 结构化输出，`ts/level/caller/msg/字段` 格式
 - SDK 日志：通过 `BotgoAdapter` 桥接至同一 zap logger
 - 生产环境（`ENV=prod`）输出 JSON，便于日志平台采集
 
-## 8. 生命周期
+## 9. 生命周期
 
 ```
 启动：配置 → 日志 → 组件装配 → errgroup 并行启动 HTTP + QQ 网关

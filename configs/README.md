@@ -21,6 +21,7 @@
 | `HTTP_IDLE_TIMEOUT` | 否 | `60s` | HTTP 空闲超时 |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
 | `BOT_DEBUG` | 否 | `false` | 机器人调试模式，开启 SDK 调试输出（生产环境保持 `false`） |
+| `EVENT_API_KEYS` | 否 | 空（拒绝所有） | 事件上报接口 API Key，逗号分隔多个；未配置时 fail-closed |
 
 > 优先级：进程环境变量 > `.env` 文件 > 默认值。`.env` 文件仅作为默认值来源，
 > 同名环境变量始终覆盖文件中的值。
