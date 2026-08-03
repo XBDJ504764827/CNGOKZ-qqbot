@@ -1,0 +1,21 @@
+# golangci-lint 配置
+# 保持简单：只启用必要的 linter，避免过度严格影响正常开发。
+#
+# 本地运行：golangci-lint run ./...
+# CI 中由 .github/workflows/ci.yml 调用（版本 v1.64.8，与 go 1.24 兼容）。
+
+run:
+  timeout: 5m
+
+linters:
+  # 只使用显式启用的 linter
+  disable-all: true
+  enable:
+    - unused          # 未使用代码（变量、函数、字段等）
+    - govet           # go vet：潜在错误与不安全代码
+    - staticcheck     # 高级静态检查（bug、性能、风格问题）
+    - ineffassign     # 无效赋值检查
+
+issues:
+  # 使用默认排除规则，减少误报
+  exclude-use-default: true

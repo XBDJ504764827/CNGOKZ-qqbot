@@ -1,0 +1,63 @@
+# LumiBot CI 工作流
+#
+# 触发时机：
+#   - push 到 develop / main
+#   - 创建或更新针对 develop / main 的 Pull Request
+#
+# 检查项：格式（gofmt）→ 依赖 → 静态检查（go vet）→ lint（golangci-lint）→ 单元测试
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  ci:
+    name: Go CI
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 安装 Go 1.24，开启依赖缓存（go.sum 未变化时可跳过下载，减少执行时间）
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      # 3. 下载依赖
+      - name: Download dependencies
+        run: go mod download
+
+      # 4. 格式检查：存在未格式化文件则 CI 失败
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::以下文件未通过 gofmt 格式化，请执行 gofmt -w 后重新提交："
+            echo "$unformatted"
+            exit 1
+          fi
+          echo "✅ gofmt 检查通过"
+
+      # 5. 静态检查（潜在错误 / 不安全代码 / 常见问题）
+      - name: Static check
+        run: go vet ./...
+
+      # 6. golangci-lint（unused / govet / staticcheck / ineffassign）
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+
+      # 7. 单元测试（全部通过才允许合并）
+      - name: Unit tests
+        run: go test ./... -count=1
