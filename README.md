@@ -5,9 +5,10 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 
 ## 项目介绍
 
-- **定位**：CNGOKZ 社区在 QQ 平台的服务入口，负责事件通知、管理员提醒与机器人指令
-- **架构**：botgo 长连接事件驱动 + 内置 HTTP 服务（供 LumiAdmin 后台回调）
-- **当前阶段**：CI 自动化 + 核心能力接入（配置 / 日志 / 事件 / 消息收发 / CI）
+- **定位**：CNGOKZ 社区在 QQ 平台的服务入口，同时也是**社区事件通知中心**
+- **架构**：botgo 长连接事件驱动 + 内置 HTTP 服务（事件上报 + LumiAdmin 回调预留）
+- **事件系统**：外部系统（LumiForum / LumiAdmin / 游戏服务器监控）通过 `POST /api/v1/events` 上报事件，经 Event Bus 分发到 QQ 通知等订阅者
+- **当前阶段**：统一事件系统（事件总线 + HTTP 上报 API + 通知处理器预留）
 
 ```
 ┌──────────────┐   POST /api/message/send（预留）   ┌──────────────┐
@@ -36,14 +37,20 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   ├── bot/
 │   │   ├── client.go          # Bot Client：openapi 工厂 + 生命周期
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
-│   │   ├── event.go           # 事件注册（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
-│   │   └── handler.go         # 业务分发（事件 → message 层）
+│   │   ├── event.go           # QQ 事件注册（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
+│   │   └── handler.go         # QQ 事件业务分发（→ message 层）
 │   ├── message/
-│   │   ├── sender.go          # 消息发送（频道 / 群 / 私聊）
-│   │   └── receiver.go        # 消息接收处理
-│   └── api/                   # 内置 HTTP 服务（/health，LumiAdmin 预留）
+│   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
+│   │   └── receiver.go        # QQ 消息接收处理
+│   ├── event/                 # 统一事件系统（社区事件通知中心）
+│   │   ├── event.go           # Bus / Subscription 接口
+│   │   ├── types.go           # Event 模型 + 事件类型 / 级别常量
+│   │   ├── bus.go             # 内存事件总线（预留 Redis Pub/Sub 扩展）
+│   │   └── handler.go         # Handler 接口 + 函数式适配器
+│   ├── notification/          # 通知处理器（监听关键事件，未来发 QQ 通知）
+│   └── api/                   # HTTP 服务：/health + /api/v1/events（事件上报）
 ├── configs/                   # 配置模板
-├── docs/                      # 架构 / CI 文档
+├── docs/                      # 架构 / CI / API 文档
 └── README.md
 ```
 
@@ -88,6 +95,31 @@ main.go
 ```
 INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "zzzz", "content": "hello"}
 ```
+
+## 统一事件系统（事件通知中心）
+
+LumiBot 接收来自外部系统的事件并分发处理：
+
+```
+外部系统（LumiForum / LumiAdmin / 游戏服务器监控）
+    │
+    │  POST /api/v1/events（X-API-Key 鉴权）
+    ▼
+Event API Layer（internal/api/events.go：校验 + 补全字段）
+    │
+    ▼
+Event Bus（internal/event：内存实现，预留 Redis Pub/Sub）
+    │
+    ▼
+Subscriber（支持同一事件多个订阅者）
+    │
+    ▼
+Notification Handler（internal/notification：当前记录日志，未来发 QQ 通知）
+```
+
+- **事件模型**：`source` / `event_type` / `level` / `title` / `message` / `data`，完整说明见 [docs/API.md](docs/API.md)
+- **关键事件**：`SYSTEM_WARNING`、`SERVER_OFFLINE`、`FORUM_REPORT_CREATED` 已被通知处理器订阅
+- **安全**：`X-API-Key` 校验（`EVENT_API_KEYS` 配置，未配置时拒绝所有上报）
 
 ## 开发说明
 

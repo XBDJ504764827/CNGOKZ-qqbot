@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -33,6 +34,8 @@ type Config struct {
 	Bot BotConfig
 	// HTTP 内置 HTTP 服务配置（供 LumiAdmin 回调）。
 	HTTP HTTPConfig
+	// Event 统一事件系统配置。
+	Event EventConfig
 	// Log 日志配置。
 	Log LogConfig
 }
@@ -61,6 +64,13 @@ type HTTPConfig struct {
 	WriteTimeout time.Duration
 	// IdleTimeout 空闲连接超时。
 	IdleTimeout time.Duration
+}
+
+// EventConfig 统一事件系统配置。
+type EventConfig struct {
+	// APIKeys 事件上报接口（POST /api/v1/events）允许的 API Key 列表，
+	// 逗号分隔配置于 EVENT_API_KEYS。未配置时拒绝所有上报请求（fail-closed）。
+	APIKeys []string
 }
 
 // LogConfig 日志配置。
@@ -92,6 +102,9 @@ func Load() (*Config, error) {
 			ReadTimeout:  getDuration("HTTP_READ_TIMEOUT", 5*time.Second),
 			WriteTimeout: getDuration("HTTP_WRITE_TIMEOUT", 10*time.Second),
 			IdleTimeout:  getDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
+		},
+		Event: EventConfig{
+			APIKeys: getStringSlice("EVENT_API_KEYS"),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
@@ -135,6 +148,22 @@ func getBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+// getStringSlice 读取逗号分隔的字符串列表环境变量（自动 trim，忽略空项）。
+func getStringSlice(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // getDuration 读取时长型环境变量（如 "5s"、"30s"），解析失败时使用默认值。

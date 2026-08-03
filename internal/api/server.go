@@ -1,8 +1,9 @@
 // Package api 提供 LumiBot 内置 HTTP 服务。
 //
-// 第一阶段仅暴露健康检查；
-// 后续阶段 LumiAdmin 将通过 POST /api/message/send 调用本服务
-// 推送管理员通知，路由与鉴权在此扩展。
+// 路由：
+//   - GET  /health        健康检查
+//   - POST /api/v1/events 外部系统事件上报（Event Bus 入口，见 events.go）
+//   - POST /api/message/send（预留）LumiAdmin 通知推送
 package api
 
 import (
@@ -15,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/XBDJ504764827/LumiBot/internal/config"
+	"github.com/XBDJ504764827/LumiBot/internal/event"
 )
 
 // Server 内置 HTTP 服务。
@@ -23,15 +25,18 @@ type Server struct {
 	logger     *zap.Logger
 }
 
-// NewServer 构建 HTTP 服务并注册路由。
-func NewServer(cfg config.HTTPConfig, logger *zap.Logger) *Server {
+// NewServer 构建 HTTP 服务并注册路由（依赖注入：事件总线 + API Key 配置）。
+func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.Logger, bus event.Bus) *Server {
 	mux := http.NewServeMux()
 
 	// 健康检查
 	mux.HandleFunc("GET /health", handleHealth)
 
-	// 预留（第二阶段实现）：
-	// LumiAdmin 通知推送
+	// 外部系统事件上报（统一事件系统入口）
+	eventsHandler := NewEventsHandler(bus, eventCfg.APIKeys, logger)
+	mux.Handle("POST /api/v1/events", eventsHandler)
+
+	// 预留：LumiAdmin 通知推送
 	// mux.HandleFunc("POST /api/message/send", s.handleMessageSend)
 
 	return &Server{

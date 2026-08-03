@@ -20,8 +20,10 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
+	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
+	"github.com/XBDJ504764827/LumiBot/internal/notification"
 )
 
 // main 启动流程：
@@ -52,7 +54,15 @@ func main() {
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
-	httpServer := api.NewServer(cfg.HTTP, zapLogger)
+
+	// 统一事件系统：Event Bus + 通知处理器（订阅关键事件）
+	eventBus := event.NewMemoryBus(zapLogger)
+	notifyHandler := notification.NewHandler(zapLogger)
+	eventBus.Subscribe(event.EventSystemWarning, notifyHandler)
+	eventBus.Subscribe(event.EventServerOffline, notifyHandler)
+	eventBus.Subscribe(event.EventForumReportCreated, notifyHandler)
+
+	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus)
 
 	// 5. 生命周期管理：监听退出信号，优雅关闭
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
