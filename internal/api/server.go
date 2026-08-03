@@ -1,7 +1,7 @@
 // Package api 提供 LumiBot 内置 HTTP 服务。
 //
 // 第一阶段仅暴露健康检查；
-// 后续阶段 LumiAdmin 将通过 POST /api/v1/message/send 调用本服务
+// 后续阶段 LumiAdmin 将通过 POST /api/message/send 调用本服务
 // 推送管理员通知，路由与鉴权在此扩展。
 package api
 
@@ -32,7 +32,7 @@ func NewServer(cfg config.HTTPConfig, logger *zap.Logger) *Server {
 
 	// 预留（第二阶段实现）：
 	// LumiAdmin 通知推送
-	// mux.HandleFunc("POST /api/v1/message/send", s.handleMessageSend)
+	// mux.HandleFunc("POST /api/message/send", s.handleMessageSend)
 
 	return &Server{
 		httpServer: &http.Server{

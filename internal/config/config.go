@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -44,6 +45,8 @@ type BotConfig struct {
 	Token string
 	// Secret 机器人 AppSecret，用于新式 oauth2 鉴权。
 	Secret string
+	// Debug 是否开启 SDK 调试模式（BOT_DEBUG），输出更多过程日志。
+	Debug bool
 	// Timeout openapi 请求超时时间。
 	Timeout time.Duration
 }
@@ -81,6 +84,7 @@ func Load() (*Config, error) {
 			AppID:   getEnv("QQ_APP_ID", ""),
 			Token:   getEnv("QQ_TOKEN", ""),
 			Secret:  getEnv("QQ_SECRET", ""),
+			Debug:   getBool("BOT_DEBUG", false),
 			Timeout: getDuration("QQ_OPENAPI_TIMEOUT", 5*time.Second),
 		},
 		HTTP: HTTPConfig{
@@ -118,6 +122,19 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getBool 读取布尔型环境变量（true/false/1/0），未设置或解析失败时返回默认值。
+func getBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 // getDuration 读取时长型环境变量（如 "5s"、"30s"），解析失败时使用默认值。

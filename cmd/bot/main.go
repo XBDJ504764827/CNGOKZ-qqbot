@@ -1,7 +1,7 @@
 // LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务。
 //
 // 本文件仅负责依赖装配与生命周期管理（依赖注入），
-// 具体能力分别由 internal/ 下的 config、logger、bot、handler、api 包提供。
+// 具体能力分别由 internal/ 下的 config、logger、bot、message、api 包提供。
 package main
 
 import (
@@ -20,10 +20,15 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
-	"github.com/XBDJ504764827/LumiBot/internal/handler"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
+	"github.com/XBDJ504764827/LumiBot/internal/message"
 )
 
+// main 启动流程：
+//
+//	加载配置 → 初始化 Logger → 创建 Bot Client → 注册事件 Handler → 连接 QQ Gateway
+//
+// 监听 SIGINT / SIGTERM，优雅关闭（关闭 Gateway 连接、HTTP 服务）。
 func main() {
 	// 1. 加载配置（.env 文件 + 环境变量）
 	cfg, err := config.Load()
@@ -42,8 +47,11 @@ func main() {
 	botgo.SetLogger(logger.NewBotgoAdapter(zapLogger))
 
 	// 4. 依赖装配（依赖注入）
-	msgHandler := handler.NewDefaultHandler(zapLogger)
-	botClient := bot.NewClient(cfg, zapLogger, msgHandler)
+	openAPI := bot.NewOpenAPI(cfg.Bot, cfg.Env, zapLogger)    // 创建 Bot Client 基础：openapi
+	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力
+	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
+	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
+	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 	httpServer := api.NewServer(cfg.HTTP, zapLogger)
 
 	// 5. 生命周期管理：监听退出信号，优雅关闭
@@ -52,7 +60,7 @@ func main() {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error { return httpServer.Start(ctx) })
-	eg.Go(func() error { return botClient.Start(ctx) })
+	eg.Go(func() error { return botClient.Start(ctx) }) // 连接 QQ Gateway
 
 	zapLogger.Info("LumiBot 启动完成",
 		zap.String("env", string(cfg.Env)),

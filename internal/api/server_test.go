@@ -60,7 +60,7 @@ func TestHealthMethodNotAllowed(t *testing.T) {
 func TestNotFound(t *testing.T) {
 	s := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/message/send", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/message/send", nil)
 	rec := httptest.NewRecorder()
 	s.httpServer.Handler.ServeHTTP(rec, req)
 

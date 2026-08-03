@@ -12,6 +12,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("ENV", "prod")
 	t.Setenv("HTTP_ADDR", ":9999")
 	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("BOT_DEBUG", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -38,6 +39,9 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.Log.Format != "json" {
 		t.Errorf("Log.Format = %q, want %q（prod 环境应为 json）", cfg.Log.Format, "json")
+	}
+	if !cfg.Bot.Debug {
+		t.Errorf("Bot.Debug = %v, want true", cfg.Bot.Debug)
 	}
 }
 

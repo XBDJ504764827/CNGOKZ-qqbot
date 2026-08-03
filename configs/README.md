@@ -20,6 +20,7 @@
 | `HTTP_WRITE_TIMEOUT` | 否 | `10s` | HTTP 写超时 |
 | `HTTP_IDLE_TIMEOUT` | 否 | `60s` | HTTP 空闲超时 |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
+| `BOT_DEBUG` | 否 | `false` | 机器人调试模式，开启 SDK 调试输出（生产环境保持 `false`） |
 
 > 优先级：进程环境变量 > `.env` 文件 > 默认值。`.env` 文件仅作为默认值来源，
 > 同名环境变量始终覆盖文件中的值。

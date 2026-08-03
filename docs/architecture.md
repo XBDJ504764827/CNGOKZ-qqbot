@@ -32,32 +32,42 @@ main (cmd/bot)
 
 ```
 QQ 网关 ──websocket──▶ botgo SDK ──▶ internal/bot/event.go（注册回调）
-                                        │ 转换为业务上下文
+                                        │ 适配为业务事件
                                         ▼
-                                 handler.Handler（接口）
+                                 internal/bot/handler.go（业务分发）
                                         │
                                         ▼
-                           DefaultHandler（第一阶段：日志）
-                           │ 第二阶段：指令路由 / 回复消息（注入 OpenAPI）
+                             internal/message（接收处理 / 发送能力）
 ```
 
-## 5. HTTP 服务（LumiAdmin 预留）
+## 5. 消息发送
+
+`internal/message/sender.go` 依赖最小接口 `MessageAPI`（仅声明三个发送方法），
+隔离 botgo 完整接口，便于测试 mock；`openapi.OpenAPI` 天然满足该接口。
+
+| 方法 | 场景 | 未来调用方 |
+| --- | --- | --- |
+| `SendChannelMessage` | QQ 频道消息 | LumiAdmin / 指令回复 |
+| `SendGroupMessage` | 群消息 | LumiAdmin 通知 |
+| `SendC2CMessage` | 私聊 / 管理员通知 | LumiAdmin 通知 |
+
+## 6. HTTP 服务（LumiAdmin 预留）
 
 | 路由 | 方法 | 当前状态 | 用途 |
 | --- | --- | --- | --- |
 | `/health` | GET | ✅ 已实现 | 健康检查 |
-| `/api/v1/message/send` | POST | ⏳ 预留 | LumiAdmin 推送管理员通知 |
+| `/api/message/send` | POST | ⏳ 预留 | LumiAdmin 推送管理员通知 |
 
 预留接口规划：请求鉴权（签名 / token）、消息体校验（管理员 ID、内容）、
 复用 bot 层 OpenAPI 客户端发送群 / 私聊消息、失败重试与审计日志。
 
-## 6. 日志规范
+## 7. 日志规范
 
 - 业务日志：zap 结构化输出，`ts/level/caller/msg/字段` 格式
 - SDK 日志：通过 `BotgoAdapter` 桥接至同一 zap logger
 - 生产环境（`ENV=prod`）输出 JSON，便于日志平台采集
 
-## 7. 生命周期
+## 8. 生命周期
 
 ```
 启动：配置 → 日志 → 组件装配 → errgroup 并行启动 HTTP + QQ 网关
