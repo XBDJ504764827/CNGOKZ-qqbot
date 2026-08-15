@@ -130,9 +130,6 @@ func TestRender_WhitelistBanDetails(t *testing.T) {
 		"has_global_ban": false,
 	})
 	_, content2 := tmpl.Render(ev2)
-	if strings.Contains(content2, "本地封禁: -\n\nSteam") {
-		// 空行处理允许；仅确保不输出“原因”占位行
-	}
 	for _, notWant := range []string{"本地封禁原因: -", "当前封禁原因: -"} {
 		if strings.Contains(content2, notWant) {
 			t.Errorf("content should not contain %q:\n%s", notWant, content2)
