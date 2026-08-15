@@ -31,6 +31,7 @@ Notification Service（internal/notification/service.go）
 | `SERVER_ONLINE` | 服务器恢复 | info | `NOTICE_COOLDOWN` | 游戏服务器恢复 |
 | `SYSTEM_WARNING` | 系统警告 | warning | `NOTICE_COOLDOWN` | 系统资源 / 服务告警 |
 | `FORUM_REPORT_CREATED` | 论坛举报 | warning | `NOTICE_COOLDOWN` | 论坛新举报 |
+| `WHITELIST_REQUEST_CREATED` | 新白名单申请 | warning | 不抑制（按事件 ID 去重） | LumiAdmin 白名单新申请（data：nickname / steamid64 / contact / openids） |
 | `ADMIN_ACTION` | 管理操作 | error | 无 | 审计用途，**默认不通知**（规则 `Enabled=false`） |
 
 规则要点：
@@ -90,7 +91,8 @@ KZ服务器01停止响应
 
 | 渠道 | 状态 | 目标配置 | 说明 |
 | --- | --- | --- | --- |
-| `QQ_PRIVATE` | ✅ 已实现 | `NOTIFY_PRIVATE_TARGET`（管理员 QQ openid） | 默认渠道，告警优先 |
+| `QQ_PRIVATE` | ✅ 已实现 | `NOTIFY_PRIVATE_TARGET`（管理员 QQ openid）或事件 `data.openids`（多管理员） | 默认渠道，告警优先 |
+| `QQ_PRIVATE`（多目标） | ✅ 已实现 | 事件 `data.openids`（openid 列表） | 白名申请按列表逐个私聊；未提供时回退到 `NOTIFY_PRIVATE_TARGET` |
 | `QQ_CHANNEL` | ✅ 已实现 | `NOTIFY_CHANNEL_TARGET`（子频道 ID） | 频道公告 |
 | `EMAIL` | ⏳ 预留 | - | 邮件通知 |
 | `WEBHOOK` | ⏳ 预留 | - | Webhook 通知 |
@@ -111,6 +113,7 @@ ERROR notification send failed  {"event_id": "...", "event_type": "...", "send_s
 | 扩展点 | 现状 | 方案 |
 | --- | --- | --- |
 | 冷却存储 | 内存 Map（`MemoryCooldown`） | 实现 `Cooldown` 接口的 Redis 版本，多实例共享冷却状态 |
+| 私聊多目标 | 事件 `data.openids`（LumiAdmin 白名单申请） | 统一 target 解析：管理员白名单/配置化 |
 | 渠道扩展 | QQ_PRIVATE / QQ_CHANNEL | Notification.Channel 已建模，EMAIL / WEBHOOK 按渠道扩展 `send()` |
 | 规则动态化 | 内置规则表 | 规则表改为配置/数据库驱动 |
 | 通知持久化 | 无（仅日志） | 通知记录落库，供 LumiAdmin 后台查询 |

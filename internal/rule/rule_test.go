@@ -25,6 +25,8 @@ func TestShouldNotify_EnabledEvents(t *testing.T) {
 		{"server online", event.EventServerOnline, event.LevelInfo, true},
 		{"system warning warning", event.EventSystemWarning, event.LevelWarning, true},
 		{"forum report warning", event.EventForumReportCreated, event.LevelWarning, true},
+		{"whitelist request warning", event.EventWhitelistRequestCreated, event.LevelWarning, true},
+		{"whitelist request info (too low)", event.EventWhitelistRequestCreated, event.LevelInfo, false},
 		{"admin action disabled", event.EventAdminAction, event.LevelCritical, false},
 	}
 	for _, tc := range cases {

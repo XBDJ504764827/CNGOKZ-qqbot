@@ -53,11 +53,12 @@ type SendEventResponse struct {
 
 // 事件类型常量（协议值，与 internal/event/catalog.go 保持一致）。
 const (
-	EventSystemWarning      = "SYSTEM_WARNING"       // 系统警告
-	EventServerOffline      = "SERVER_OFFLINE"       // 游戏服务器离线
-	EventServerOnline       = "SERVER_ONLINE"        // 游戏服务器恢复
-	EventForumReportCreated = "FORUM_REPORT_CREATED" // 论坛新举报
-	EventAdminAction        = "ADMIN_ACTION"         // 管理操作
+	EventSystemWarning           = "SYSTEM_WARNING"            // 系统警告
+	EventServerOffline           = "SERVER_OFFLINE"            // 游戏服务器离线
+	EventServerOnline            = "SERVER_ONLINE"             // 游戏服务器恢复
+	EventForumReportCreated      = "FORUM_REPORT_CREATED"      // 论坛新举报
+	EventAdminAction             = "ADMIN_ACTION"              // 管理操作
+	EventWhitelistRequestCreated = "WHITELIST_REQUEST_CREATED" // 白名单新申请
 )
 
 // 事件来源常量。

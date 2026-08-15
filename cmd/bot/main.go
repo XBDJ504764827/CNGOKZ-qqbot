@@ -63,6 +63,7 @@ func main() {
 	eventBus.Subscribe(event.EventServerOnline, notifyService)
 	eventBus.Subscribe(event.EventForumReportCreated, notifyService)
 	eventBus.Subscribe(event.EventAdminAction, notifyService)
+	eventBus.Subscribe(event.EventWhitelistRequestCreated, notifyService)
 
 	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus)
 

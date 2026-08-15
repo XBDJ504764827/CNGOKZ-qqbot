@@ -77,8 +77,15 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 		return nil
 	}
 
-	// 3. 冷却防刷
-	if !s.cooldown.Allow(ev.EventType, r.Cooldown) {
+	// 3. 冷却防刷。
+	// 白名单申请事件彼此独立（每人每申请各成一条，用户通过后不可重复提交），
+	// 故以事件 ID 为去重键，保证每条申请都能被即时通知，不被同类型窗口吞掉；
+	// 其余事件保持按事件类型窗口去重（同类型重复打扰防刷）。
+	cooldownKey := ev.EventType
+	if ev.EventType == event.EventWhitelistRequestCreated {
+		cooldownKey = ev.ID
+	}
+	if !s.cooldown.Allow(cooldownKey, r.Cooldown) {
 		s.logger.Debug("事件在冷却窗口内，跳过重复通知",
 			zap.String("event_id", ev.ID),
 			zap.String("event_type", ev.EventType),
@@ -92,7 +99,7 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 	n := NewNotification(ev, ChannelQQPrivate, title, content)
 
 	// 5. 发送 + 通知日志（event_id / event_type / send_status / error）
-	status, err := s.send(ctx, n)
+	status, err := s.send(ctx, ev, n)
 	if err != nil {
 		s.logger.Error("notification send failed",
 			zap.String("notification_id", n.ID),
@@ -113,15 +120,50 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 	return nil
 }
 
+// resolvePrivateTargets 解析私聊通知目标：
+//   - 优先取事件 data.openids（网站后台填了 openid 的管理员，见 LumiAdmin 白名单申请上报）；
+//   - 未提供时回退到配置的默认管理员（NOTIFY_PRIVATE_TARGET）；
+//   - 均未配置时返回 nil（跳过私聊）。
+func (s *Service) resolvePrivateTargets(ev event.Event) []string {
+	if raw, ok := ev.Data["openids"]; ok {
+		var openids []string
+		switch v := raw.(type) {
+		case []interface{}:
+			for _, item := range v {
+				if str, ok := item.(string); ok && str != "" {
+					openids = append(openids, str)
+				}
+			}
+		case []string:
+			for _, str := range v {
+				if str != "" {
+					openids = append(openids, str)
+				}
+			}
+		}
+		if len(openids) > 0 {
+			return openids
+		}
+	}
+	if s.privateTarget != "" {
+		return []string{s.privateTarget}
+	}
+	return nil
+}
+
 // send 按渠道发送通知，返回发送状态（sent / skipped）与错误。
-func (s *Service) send(ctx context.Context, n Notification) (string, error) {
+// 私聊渠道支持多个目标：events data.openids 列表逐个发送；缺省时发默认管理员。
+func (s *Service) send(ctx context.Context, ev event.Event, n Notification) (string, error) {
 	switch n.Channel {
 	case ChannelQQPrivate:
-		if s.privateTarget == "" {
-			return "skipped", fmt.Errorf("未配置 QQ_PRIVATE 通知目标（NOTIFY_PRIVATE_TARGET）")
+		targets := s.resolvePrivateTargets(ev)
+		if len(targets) == 0 {
+			return "skipped", fmt.Errorf("未配置 QQ_PRIVATE 通知目标（NOTIFY_PRIVATE_TARGET 或 data.openids）")
 		}
-		if _, err := s.sender.SendC2CMessage(ctx, s.privateTarget, n.Content); err != nil {
-			return "failed", err
+		for _, target := range targets {
+			if _, err := s.sender.SendC2CMessage(ctx, target, n.Content); err != nil {
+				return "failed", err
+			}
 		}
 	case ChannelQQChannel:
 		if s.channelTarget == "" {

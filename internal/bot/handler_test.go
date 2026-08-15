@@ -34,6 +34,15 @@ func TestHandler_OnATMessage(t *testing.T) {
 	}
 }
 
+// TestHandler_OnC2CMessage 验证私聊消息分发（user_id 即用户 openid）。
+func TestHandler_OnC2CMessage(t *testing.T) {
+	h := newTestHandler()
+	msg := &dto.Message{ID: "msg-3", Content: "你好", Author: &dto.User{ID: "openid-abc123"}}
+	if err := h.OnC2CMessage(context.Background(), msg); err != nil {
+		t.Fatalf("OnC2CMessage() error = %v", err)
+	}
+}
+
 // TestHandler_OnReadyOnErrorOnPlain 验证连接类事件分发不 panic。
 func TestHandler_OnReadyOnErrorOnPlain(t *testing.T) {
 	h := newTestHandler()

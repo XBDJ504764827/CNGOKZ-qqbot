@@ -57,6 +57,11 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
+        env:
+          # golangci-lint-action@v6 仍构建在 Node 20 上。GitHub 已将默认运行时切到 Node 24，
+          # 旧 Node 运行时的 action 需显式开启此开关才不会被拒绝；待 v7（Node 24）稳定后
+          # 再升级 action 并迁移到 golangci-lint v2 配置以移除该开关。
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
       # 7. 单元测试（全部通过才允许合并）
       - name: Unit tests

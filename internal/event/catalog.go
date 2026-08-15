@@ -5,11 +5,12 @@ package event
 
 // 事件类型（EventType）常量 —— 外部系统约定的协议值。
 const (
-	EventSystemWarning      = "SYSTEM_WARNING"       // 系统警告
-	EventServerOffline      = "SERVER_OFFLINE"       // 游戏服务器离线
-	EventServerOnline       = "SERVER_ONLINE"        // 游戏服务器恢复
-	EventForumReportCreated = "FORUM_REPORT_CREATED" // 论坛新举报
-	EventAdminAction        = "ADMIN_ACTION"         // 管理操作
+	EventSystemWarning           = "SYSTEM_WARNING"            // 系统警告
+	EventServerOffline           = "SERVER_OFFLINE"            // 游戏服务器离线
+	EventServerOnline            = "SERVER_ONLINE"             // 游戏服务器恢复
+	EventForumReportCreated      = "FORUM_REPORT_CREATED"      // 论坛新举报
+	EventAdminAction             = "ADMIN_ACTION"              // 管理操作
+	EventWhitelistRequestCreated = "WHITELIST_REQUEST_CREATED" // LumiAdmin 白名单新申请
 )
 
 // 事件来源（Source）常量 —— 记录事件来自哪个外部系统。
@@ -22,11 +23,12 @@ const (
 
 // eventTitles 事件类型 → 中文标题（用于 SDK 提示 / 文档）。
 var eventTitles = map[string]string{
-	EventSystemWarning:      "系统警告",
-	EventServerOffline:      "服务器离线",
-	EventServerOnline:       "服务器恢复",
-	EventForumReportCreated: "论坛举报",
-	EventAdminAction:        "管理操作",
+	EventSystemWarning:           "系统警告",
+	EventServerOffline:           "服务器离线",
+	EventServerOnline:            "服务器恢复",
+	EventForumReportCreated:      "论坛举报",
+	EventAdminAction:             "管理操作",
+	EventWhitelistRequestCreated: "新白名单申请",
 }
 
 // KnownEventTypes 返回全部已知事件类型。

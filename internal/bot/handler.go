@@ -49,6 +49,12 @@ func (h *Handler) OnATMessage(ctx context.Context, msg *dto.Message) error {
 	return h.receiver.ReceiveMessage(ctx, msg)
 }
 
+// OnC2CMessage 分发 C2C_MESSAGE_CREATE 事件：用户私聊机器人。
+// 日志中的 user_id 即用户 openid，可用于配置通知目标（NOTIFY_PRIVATE_TARGET）。
+func (h *Handler) OnC2CMessage(ctx context.Context, msg *dto.Message) error {
+	return h.receiver.ReceiveMessage(ctx, msg)
+}
+
 // OnPlain 分发未注册事件的兜底日志。
 func (h *Handler) OnPlain(event *dto.WSPayload, payload []byte) {
 	h.logger.Debug("收到未注册网关事件",
