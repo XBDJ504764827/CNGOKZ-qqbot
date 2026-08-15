@@ -85,7 +85,8 @@
 
 | data 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `target_openid` | string | 否 | 接收通知的 QQ 用户 openid；**省略时发给默认管理员**（LumiBot 配置 `NOTIFY_PRIVATE_TARGET`） |
+| `target_openid` | string | 否 | 接收通知的 QQ 用户 openid（单目标，论坛事件）；省略时发给默认管理员 |
+| `openids` | string[] | 否 | 接收通知的 QQ 用户 openid 列表（多目标，如白名单申请）；**省略/空时发给默认管理员**（`NOTIFY_PRIVATE_TARGET`） |
 | `actor_name` | string | 否 | 触发动作的用户昵称（模板展示用） |
 | `topic_title` | string | 否 | 主题标题（模板展示用） |
 | `topic_id` / `topic_slug` / `comment_id` / `poll_title` / `report_id` / `result` | string | 否 | 业务标识与结果（模板展示用） |

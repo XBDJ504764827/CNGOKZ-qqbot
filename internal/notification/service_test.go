@@ -168,6 +168,81 @@ func TestHandleEvent_SendFailure(t *testing.T) {
 	}
 }
 
+// whitelistEvent 构造白名单申请事件（带多个管理员 openid）。
+func whitelistEvent(id string, openids []interface{}) event.Event {
+	return event.Event{
+		ID:        id,
+		Source:    "LumiAdmin",
+		EventType: event.EventWhitelistRequestCreated,
+		Level:     event.LevelWarning,
+		Timestamp: time.Now(),
+		Title:     "新白名单申请",
+		Message:   "玩家 张三 提交了白名单申请，等待审核",
+		Data: map[string]interface{}{
+			"whitelist_id": "wl-1",
+			"nickname":     "张三",
+			"steamid64":    "76561198000000001",
+			"contact":      "QQ 12345",
+			"openids":      openids,
+		},
+	}
+}
+
+// TestHandleEvent_WhitelistMultiTarget 验证白名单申请事件按 data.openids 逐个私聊。
+func TestHandleEvent_WhitelistMultiTarget(t *testing.T) {
+	sender := &fakeSender{}
+	s := newTestService(sender)
+
+	ev := whitelistEvent("evt-wl-1", []interface{}{"openid-A", "openid-B", "openid-C"})
+	if err := s.HandleEvent(context.Background(), ev); err != nil {
+		t.Fatalf("HandleEvent() error = %v", err)
+	}
+	if sender.c2cCount() != 3 {
+		t.Fatalf("c2c send calls = %d, want 3 (one per openid)", sender.c2cCount())
+	}
+	want := []string{"openid-A", "openid-B", "openid-C"}
+	for i, target := range want {
+		if sender.c2cCalls[i] != target {
+			t.Errorf("sent to %q at slice %d, want %q", sender.c2cCalls[i], i, target)
+		}
+	}
+}
+
+// TestHandleEvent_WhitelistNoOpenids 验证 data.openids 为空时回退到默认管理员。
+func TestHandleEvent_WhitelistNoOpenids(t *testing.T) {
+	sender := &fakeSender{}
+	s := newTestService(sender)
+
+	ev := whitelistEvent("evt-wl-2", nil) // 无 openids（或空列表）
+	if err := s.HandleEvent(context.Background(), ev); err != nil {
+		t.Fatalf("HandleEvent() error = %v", err)
+	}
+	if sender.c2cCount() != 1 {
+		t.Fatalf("c2c send calls = %d, want 1 (fallback default)", sender.c2cCount())
+	}
+	if sender.c2cCalls[0] != "admin-qq-openid" {
+		t.Errorf("sent to %q, want admin-qq-openid", sender.c2cCalls[0])
+	}
+}
+
+// TestHandleEvent_WhitelistNoCooldownSuppression 验证不同申请事件不会被同类型窗口吞掉。
+// 用户通过后不可重复提交，故每条申请都应即时通知。
+func TestHandleEvent_WhitelistNoCooldownSuppression(t *testing.T) {
+	sender := &fakeSender{}
+	s := newTestService(sender)
+
+	// 同窗口内的两条不同白名单申请都应通知（按事件 ID 去重，不按事件类型）。
+	if err := s.HandleEvent(context.Background(), whitelistEvent("evt-wl-a", []interface{}{"openid-A"})); err != nil {
+		t.Fatalf("first HandleEvent() error = %v", err)
+	}
+	if err := s.HandleEvent(context.Background(), whitelistEvent("evt-wl-b", []interface{}{"openid-B"})); err != nil {
+		t.Fatalf("second HandleEvent() error = %v", err)
+	}
+	if sender.c2cCount() != 2 {
+		t.Fatalf("c2c send calls = %d, want 2 (each application notifies)", sender.c2cCount())
+	}
+}
+
 // TestHandleEvent_NoPrivateTarget 验证未配置私聊目标时发送被跳过并返回错误。
 func TestHandleEvent_NoPrivateTarget(t *testing.T) {
 	sender := &fakeSender{}
