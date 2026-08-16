@@ -9,10 +9,12 @@ import (
 
 // Receiver 处理收到的用户消息。
 //
-// 第一阶段：结构化日志输出（用户ID、频道ID、消息内容），
-// 为排查机器人事件提供依据；后续指令系统在此扩展。
+// 第一阶段：结构化日志输出；后续指令系统在此扩展。
+// 可注入 OnUserText 回调，用于拦截私聊/消息并交给上层业务（如 QQ 审批的拒绝原因）。
 type Receiver struct {
 	logger *zap.Logger
+	// OnUserText 可选的用户文本回调（openid, content），返回 handled=true 表示已消费。
+	OnUserText func(ctx context.Context, openid, content string) (handled bool, err error)
 }
 
 // NewReceiver 构建消息接收处理器。
@@ -21,13 +23,22 @@ func NewReceiver(logger *zap.Logger) *Receiver {
 }
 
 // ReceiveMessage 处理收到的用户消息。
-//
-// 当前实现记录结构化日志：
-//
-//	INFO  message received  {"user_id": "xxx", "channel_id": "xxx", "content": "hello"}
-func (r *Receiver) ReceiveMessage(_ context.Context, msg *dto.Message) error {
+func (r *Receiver) ReceiveMessage(ctx context.Context, msg *dto.Message) error {
+	openid := authorID(msg.Author)
+
+	// 若注册了用户文本回调，先交给上层业务判断是否消费（例如 QQ 审批拒绝原因）。
+	if r.OnUserText != nil {
+		handled, err := r.OnUserText(ctx, openid, msg.Content)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+	}
+
 	r.logger.Info("message received",
-		zap.String("user_id", authorID(msg.Author)),
+		zap.String("user_id", openid),
 		zap.String("guild_id", msg.GuildID),
 		zap.String("channel_id", msg.ChannelID),
 		zap.String("message_id", msg.ID),

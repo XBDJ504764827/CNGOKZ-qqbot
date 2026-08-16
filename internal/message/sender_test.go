@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tencent-connect/botgo/dto"
+	"github.com/tencent-connect/botgo/dto/keyboard"
 	"github.com/tencent-connect/botgo/openapi/options"
 	"go.uber.org/zap"
 )
@@ -90,6 +91,64 @@ func TestSendC2CMessage(t *testing.T) {
 	}
 	if gotUserID != "user-1" || gotContent != "admin alert" {
 		t.Errorf("postC2CMessage args = (%q, %q), want (%q, %q)", gotUserID, gotContent, "user-1", "admin alert")
+	}
+}
+
+func TestSendC2CMessageWithKeyboard(t *testing.T) {
+	var gotMsg *dto.MessageToCreate
+
+	api := &fakeMessageAPI{
+		postC2CMessage: func(_ context.Context, _ string, msg dto.APIMessage, _ ...options.Option) (*dto.Message, error) {
+			gotMsg = msg.(*dto.MessageToCreate)
+			return &dto.Message{ID: "msg-4"}, nil
+		},
+	}
+	s := NewSender(api, zap.NewNop())
+
+	kb := &keyboard.CustomKeyboard{Rows: []*keyboard.Row{{Buttons: []*keyboard.Button{
+		{ID: "approve:wl-1", RenderData: &keyboard.RenderData{Label: "通过"},
+			Action: &keyboard.Action{Type: keyboard.ActionTypeCallback, Data: "approve:wl-1"}},
+	}}}}
+
+	if _, err := s.SendC2CMessageWithKeyboard(context.Background(), "user-1", "hello", kb); err != nil {
+		t.Fatalf("SendC2CMessageWithKeyboard() error = %v", err)
+	}
+	if gotMsg.MsgType != dto.MarkdownMsg {
+		t.Errorf("msg_type = %d, want %d (markdown)：纯文本携带 keyboard 会被服务端静默丢弃", gotMsg.MsgType, dto.MarkdownMsg)
+	}
+	if gotMsg.Markdown == nil || gotMsg.Markdown.Content != "hello" {
+		t.Errorf("markdown = %+v, want content %q", gotMsg.Markdown, "hello")
+	}
+	if gotMsg.Keyboard == nil || gotMsg.Keyboard.Content != kb {
+		t.Errorf("keyboard = %+v, want %+v", gotMsg.Keyboard, kb)
+	}
+}
+
+func TestSendC2CMessageWithKeyboardFallback(t *testing.T) {
+	var calls int
+
+	api := &fakeMessageAPI{
+		postC2CMessage: func(_ context.Context, _ string, msg dto.APIMessage, _ ...options.Option) (*dto.Message, error) {
+			calls++
+			m := msg.(*dto.MessageToCreate)
+			if m.MsgType == dto.MarkdownMsg {
+				return nil, errors.New("markdown not allowed")
+			}
+			return &dto.Message{ID: "msg-5"}, nil
+		},
+	}
+	s := NewSender(api, zap.NewNop())
+
+	kb := &keyboard.CustomKeyboard{Rows: []*keyboard.Row{{Buttons: []*keyboard.Button{
+		{ID: "approve:wl-1", RenderData: &keyboard.RenderData{Label: "通过"},
+			Action: &keyboard.Action{Type: keyboard.ActionTypeCallback, Data: "approve:wl-1"}},
+	}}}}
+
+	if _, err := s.SendC2CMessageWithKeyboard(context.Background(), "user-1", "hello", kb); err != nil {
+		t.Fatalf("expected fallback to plain text, got error = %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("postC2CMessage calls = %d, want 2 (markdown 失败后降级纯文本)", calls)
 	}
 }
 
