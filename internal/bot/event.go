@@ -27,6 +27,7 @@ func RegisterEvents(h *Handler, logger *zap.Logger) dto.Intent {
 		messageCreateHandler(h, logger),
 		atMessageHandler(h, logger),
 		c2cMessageHandler(h, logger),
+		interactionHandler(h, logger),
 		plainHandler(h),
 	)
 }
@@ -72,6 +73,17 @@ func c2cMessageHandler(h *Handler, logger *zap.Logger) event.C2CMessageEventHand
 	return func(_ *dto.WSPayload, data *dto.WSC2CMessageData) error {
 		if err := h.OnC2CMessage(context.Background(), (*dto.Message)(data)); err != nil {
 			logger.Warn("处理 C2C_MESSAGE_CREATE 事件失败", zap.Error(err))
+		}
+		return nil
+	}
+}
+
+// interactionHandler INTERACTION_CREATE 事件：消息按钮点击等互动。
+// 用于 QQ 聊天审批白名单（通过/拒绝按钮）。
+func interactionHandler(h *Handler, logger *zap.Logger) event.InteractionEventHandler {
+	return func(_ *dto.WSPayload, data *dto.WSInteractionData) error {
+		if err := h.OnInteraction(context.Background(), data); err != nil {
+			logger.Warn("处理 INTERACTION_CREATE 事件失败", zap.Error(err))
 		}
 		return nil
 	}

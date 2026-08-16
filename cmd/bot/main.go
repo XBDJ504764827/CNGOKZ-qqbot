@@ -24,6 +24,7 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
+	"github.com/XBDJ504764827/LumiBot/internal/qqapproval"
 )
 
 // main 启动流程：
@@ -55,9 +56,27 @@ func main() {
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
+	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）
+	approvalSvc, err := qqapproval.New(qqapproval.Options{
+		Sender:  sender,
+		BaseURL: cfg.LumiAdmin.CallbackBaseURL,
+		Token:   cfg.LumiAdmin.IntegrationToken,
+	}, zapLogger)
+	if err != nil {
+		fatalf("初始化 QQ 审批服务失败: %v", err)
+	}
+	if approvalSvc.Enabled() {
+		// 按钮点击 → 审批
+		botHandler.SetInteractionHandler(approvalSvc.HandleInteraction)
+		// 私聊文本 → 「等待填拒绝原因」时消费
+		receiver.OnUserText = approvalSvc.HandleUserText
+	} else {
+		zapLogger.Warn("LumiAdmin 审批未配置（LUMIADMIN_CALLBACK_URL / LUMIADMIN_QQ_TOKEN），按钮审批已禁用")
+	}
+
 	// 统一事件系统：Event Bus + 通知服务（订阅关键事件，规则/模板/冷却见 internal/notification）
 	eventBus := event.NewMemoryBus(zapLogger)
-	notifyService := notification.NewService(cfg.Notification, sender, zapLogger)
+	notifyService := notification.NewServiceWithButtons(cfg.Notification, sender, approvalSvc, zapLogger)
 	eventBus.Subscribe(event.EventSystemWarning, notifyService)
 	eventBus.Subscribe(event.EventServerOffline, notifyService)
 	eventBus.Subscribe(event.EventServerOnline, notifyService)

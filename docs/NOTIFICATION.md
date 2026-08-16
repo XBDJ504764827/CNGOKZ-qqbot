@@ -97,7 +97,21 @@ KZ服务器01停止响应
 | `EMAIL` | ⏳ 预留 | - | 邮件通知 |
 | `WEBHOOK` | ⏳ 预留 | - | Webhook 通知 |
 
-## 5. 通知日志
+## 5. 白名单 QQ 聊天审批（按钮）
+
+当配置了 LumiAdmin 回写（`LUMIADMIN_CALLBACK_URL` + `LUMIADMIN_QQ_TOKEN`）时，白名单申请通知会附带「通过 ✅ / 拒绝 ❌」按钮：
+
+```
+[新白名单申请] 玩家: 张三  ...
+[通过 ✅] [拒绝 ❌]
+```
+
+- **点「通过」**：LumiBot 调用 LumiAdmin `POST /api/integration/qq/whitelist/:id/review`，提交 `approve` + 管理员 openid，渠道记为 `qq`，操作人记为后台管理员显示名。
+- **点「拒绝」**：LumiBot 反问「请回复拒绝原因」，管理员打字回复后带原因提交 `reject`。
+- **并发安全**：多管理员同时审批同一单时，由 LumiAdmin 数据库原子条件更新保证只成功一次，其余收到「该申请已被他人审批，无法重复操作」。
+- **未配置**：无 `LUMIADMIN_CALLBACK_URL` / `LUMIADMIN_QQ_TOKEN` 时，仅发纯文本通知，不启用按钮审批。
+
+## 6. 通知日志
 
 每次发送记录结构化日志（`internal/notification/service.go`）：
 
@@ -108,7 +122,7 @@ ERROR notification send failed  {"event_id": "...", "event_type": "...", "send_s
 
 状态取值：`sent`（已发送）/ `failed`（发送失败）/ `skipped`（目标未配置等）。
 
-## 6. 后续扩展方案
+## 7. 后续扩展方案
 
 | 扩展点 | 现状 | 方案 |
 | --- | --- | --- |
