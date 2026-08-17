@@ -101,6 +101,8 @@ type LumiAdminConfig struct {
 	CallbackBaseURL string
 	// IntegrationToken LumiAdmin 的 QQ 集成令牌（LUMIADMIN_QQ_TOKEN），用于调用审批接口鉴权。
 	IntegrationToken string
+	// ApprovalAuditPath QQ 白名单审批审计文件路径（QQ_APPROVAL_AUDIT_PATH）。
+	ApprovalAuditPath string
 }
 
 // LogConfig 日志配置。
@@ -145,8 +147,9 @@ func Load() (*Config, error) {
 			ChannelTarget: getEnv("NOTIFY_CHANNEL_TARGET", ""),
 		},
 		LumiAdmin: LumiAdminConfig{
-			CallbackBaseURL:  getEnv("LUMIADMIN_CALLBACK_URL", ""),
-			IntegrationToken: getEnv("LUMIADMIN_QQ_TOKEN", ""),
+			CallbackBaseURL:   getEnv("LUMIADMIN_CALLBACK_URL", ""),
+			IntegrationToken:  getEnv("LUMIADMIN_QQ_TOKEN", ""),
+			ApprovalAuditPath: getEnv("QQ_APPROVAL_AUDIT_PATH", "logs/qq-approval-audit.jsonl"),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),

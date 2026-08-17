@@ -57,9 +57,16 @@ func main() {
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）
+	approvalAuditor, err := qqapproval.NewFileAuditor(cfg.LumiAdmin.ApprovalAuditPath)
+	if err != nil {
+		fatalf("初始化 QQ 审批审计失败: %v", err)
+	}
+	defer func() { _ = approvalAuditor.Close() }()
+
 	approvalSvc, err := qqapproval.New(qqapproval.Options{
 		Sender:           sender,
 		InteractionAcker: openAPI,
+		Auditor:          approvalAuditor,
 		BaseURL:          cfg.LumiAdmin.CallbackBaseURL,
 		Token:            cfg.LumiAdmin.IntegrationToken,
 	}, zapLogger)

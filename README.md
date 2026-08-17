@@ -167,10 +167,11 @@ curl http://127.0.0.1:8080/health
 
 ```bash
 # 1. 构建
-CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o lumibot ./cmd/bot
+mkdir -p bin
+CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/lumibot ./cmd/bot
 
 # 2. 上传到服务器 /opt/lumibot/，并放置 .env
-scp lumibot user@server:/opt/lumibot/
+scp bin/lumibot user@server:/opt/lumibot/lumibot
 
 # 3. systemd 管理（服务模板见 docs/CI.md）
 systemctl enable --now lumibot

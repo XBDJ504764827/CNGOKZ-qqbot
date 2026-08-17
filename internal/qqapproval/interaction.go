@@ -20,6 +20,10 @@ func (s *Service) HandleInteraction(ctx context.Context, data *dto.WSInteraction
 	s.logger.Info("QQ 审批：收到按钮点击",
 		zap.String("interaction_id", data.ID), zap.String("openid", openid),
 		zap.String("action", action), zap.String("whitelist_id", whitelistID))
+	s.audit(AuditEvent{
+		Event: auditReceived, WhitelistID: whitelistID, InteractionID: data.ID,
+		Nickname: s.nameFor(whitelistID), OpenID: openid, Action: action, Result: "received",
+	})
 
 	// QQ 客户端要求第三方机器人确认互动已收到，否则即使后续业务成功，
 	// 客户端仍会显示“请求第三方失败”。业务审批结果通过私聊消息另行反馈。
@@ -28,6 +32,36 @@ func (s *Service) HandleInteraction(ctx context.Context, data *dto.WSInteraction
 			s.logger.Warn("QQ 审批：按钮互动回执失败",
 				zap.String("interaction_id", data.ID), zap.Error(err))
 		}
+	}
+	if !s.authorizedFor(whitelistID, openid) {
+		s.audit(AuditEvent{
+			Event: auditRejected, WhitelistID: whitelistID, InteractionID: data.ID,
+			Nickname: s.nameFor(whitelistID), OpenID: openid, Action: action, Result: "unauthorized",
+		})
+		s.logger.Warn("QQ 审批：未授权按钮点击",
+			zap.String("interaction_id", data.ID), zap.String("openid", openid),
+			zap.String("action", action), zap.String("whitelist_id", whitelistID))
+		_, _ = s.sender.SendC2CMessage(ctx, openid, "你没有该白名单申请的审批权限。")
+		return nil
+	}
+	if !s.claimInteraction(data.ID) {
+		s.audit(AuditEvent{
+			Event: auditDuplicated, WhitelistID: whitelistID, InteractionID: data.ID,
+			Nickname: s.nameFor(whitelistID), OpenID: openid, Action: action, Result: "duplicate_interaction",
+		})
+		s.logger.Info("QQ 审批：忽略重复按钮互动", zap.String("interaction_id", data.ID))
+		return nil
+	}
+	if action == BtnApprove {
+		if !s.beginReview(whitelistID) {
+			s.audit(AuditEvent{
+				Event: auditDuplicated, WhitelistID: whitelistID, InteractionID: data.ID,
+				Nickname: s.nameFor(whitelistID), OpenID: openid, Action: action, Result: "review_in_progress",
+			})
+			_, _ = s.sender.SendC2CMessage(ctx, openid, "该申请正在审批处理中，请勿重复点击。")
+			return nil
+		}
+		defer s.endReview(whitelistID)
 	}
 	return s.DoAction(ctx, openid, action, whitelistID, nickname)
 }
