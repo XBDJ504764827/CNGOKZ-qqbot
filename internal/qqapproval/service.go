@@ -35,6 +35,11 @@ type Sender interface {
 	SendC2CMessageWithKeyboard(ctx context.Context, userID, content string, buttons *keyboard.CustomKeyboard) (*dto.Message, error)
 }
 
+// InteractionAcker 向 QQ 确认按钮互动已被机器人接收。
+type InteractionAcker interface {
+	PutInteraction(ctx context.Context, interactionID string, body string) error
+}
+
 // 按钮动作标识（写在一行避免 gofmt 分段）。
 const (
 	BtnApprove = "approve"
@@ -51,6 +56,7 @@ type pendingEntry struct {
 // Service 审批服务。
 type Service struct {
 	sender  Sender
+	acker   InteractionAcker
 	baseURL string // LumiAdmin 地址，如 http://127.0.0.1:8081
 	token   string // LumiAdmin QQ Integration Token
 	http    *http.Client
@@ -63,11 +69,12 @@ type Service struct {
 
 // Options 构建参数。
 type Options struct {
-	Sender     Sender
-	BaseURL    string
-	Token      string
-	PendingTTL time.Duration // 拒绝原因等待超时
-	HTTPClient *http.Client
+	Sender           Sender
+	InteractionAcker InteractionAcker
+	BaseURL          string
+	Token            string
+	PendingTTL       time.Duration // 拒绝原因等待超时
+	HTTPClient       *http.Client
 }
 
 // New 构建审批服务。
@@ -85,6 +92,7 @@ func New(opts Options, logger *zap.Logger) (*Service, error) {
 	}
 	return &Service{
 		sender:  opts.Sender,
+		acker:   opts.InteractionAcker,
 		baseURL: strings.TrimRight(opts.BaseURL, "/"),
 		token:   opts.Token,
 		http:    httpClient,

@@ -20,6 +20,17 @@ type fakeSender struct {
 	c2c []string // contents
 }
 
+type fakeInteractionAcker struct {
+	interactionID string
+	body          string
+}
+
+func (f *fakeInteractionAcker) PutInteraction(_ context.Context, interactionID, body string) error {
+	f.interactionID = interactionID
+	f.body = body
+	return nil
+}
+
 func (f *fakeSender) SendC2CMessage(_ context.Context, _, content string) (*dto.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -95,6 +106,42 @@ func TestParseAction(t *testing.T) {
 			t.Errorf("ParseAction(%q) = (%q,%q,%v), want (%q,%q,%v)",
 				c.in, a, wl, ok, c.action, c.wl, c.wantOK)
 		}
+	}
+}
+
+func TestHandleInteractionAcknowledgesButtonClick(t *testing.T) {
+	srv := bootServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	f := &fakeSender{}
+	acker := &fakeInteractionAcker{}
+	s, err := New(Options{
+		Sender:           f,
+		InteractionAcker: acker,
+		BaseURL:          srv.URL,
+		Token:            "test-token",
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	interaction := &dto.WSInteractionData{
+		ID:         "interaction-1",
+		UserOpenID: "openid-1",
+		Data: &dto.InteractionData{
+			Resolved: json.RawMessage(`{"button_data":"approve:wl-1"}`),
+		},
+	}
+	if err := s.HandleInteraction(context.Background(), interaction); err != nil {
+		t.Fatalf("HandleInteraction() error = %v", err)
+	}
+	if acker.interactionID != "interaction-1" || acker.body != `{"code":0}` {
+		t.Fatalf("interaction ack = (%q, %q), want (%q, %q)",
+			acker.interactionID, acker.body, "interaction-1", `{"code":0}`)
+	}
+	if !strings.Contains(lastMSG(f), "已通过") {
+		t.Fatalf("reply missing approval result: %q", lastMSG(f))
 	}
 }
 

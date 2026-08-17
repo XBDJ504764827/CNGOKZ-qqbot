@@ -58,9 +58,10 @@ func main() {
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）
 	approvalSvc, err := qqapproval.New(qqapproval.Options{
-		Sender:  sender,
-		BaseURL: cfg.LumiAdmin.CallbackBaseURL,
-		Token:   cfg.LumiAdmin.IntegrationToken,
+		Sender:           sender,
+		InteractionAcker: openAPI,
+		BaseURL:          cfg.LumiAdmin.CallbackBaseURL,
+		Token:            cfg.LumiAdmin.IntegrationToken,
 	}, zapLogger)
 	if err != nil {
 		fatalf("初始化 QQ 审批服务失败: %v", err)

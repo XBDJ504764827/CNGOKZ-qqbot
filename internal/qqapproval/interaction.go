@@ -18,7 +18,17 @@ func (s *Service) HandleInteraction(ctx context.Context, data *dto.WSInteraction
 		return nil
 	}
 	s.logger.Info("QQ 审批：收到按钮点击",
-		zap.String("openid", openid), zap.String("action", action), zap.String("whitelist_id", whitelistID))
+		zap.String("interaction_id", data.ID), zap.String("openid", openid),
+		zap.String("action", action), zap.String("whitelist_id", whitelistID))
+
+	// QQ 客户端要求第三方机器人确认互动已收到，否则即使后续业务成功，
+	// 客户端仍会显示“请求第三方失败”。业务审批结果通过私聊消息另行反馈。
+	if s.acker != nil && data.ID != "" {
+		if err := s.acker.PutInteraction(ctx, data.ID, `{"code":0}`); err != nil {
+			s.logger.Warn("QQ 审批：按钮互动回执失败",
+				zap.String("interaction_id", data.ID), zap.Error(err))
+		}
+	}
 	return s.DoAction(ctx, openid, action, whitelistID, nickname)
 }
 
