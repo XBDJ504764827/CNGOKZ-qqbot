@@ -42,3 +42,31 @@ func TestMemoryCooldown_ZeroWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryCooldown_ReleaseAllowsRetry(t *testing.T) {
+	c := NewMemoryCooldown()
+
+	reservation, ok := c.Reserve("SERVER_OFFLINE", time.Minute)
+	if !ok {
+		t.Fatal("first Reserve should return true")
+	}
+	if _, ok := c.Reserve("SERVER_OFFLINE", time.Minute); ok {
+		t.Fatal("a pending reservation should block duplicate sends")
+	}
+	reservation.Release()
+	if _, ok := c.Reserve("SERVER_OFFLINE", time.Minute); !ok {
+		t.Fatal("Release should allow a retry")
+	}
+}
+
+func TestMemoryCooldown_CommitStartsWindow(t *testing.T) {
+	c := NewMemoryCooldown()
+	reservation, ok := c.Reserve("SERVER_OFFLINE", time.Minute)
+	if !ok {
+		t.Fatal("Reserve should return true")
+	}
+	reservation.Commit()
+	if _, ok := c.Reserve("SERVER_OFFLINE", time.Minute); ok {
+		t.Fatal("Commit should start the cooldown window")
+	}
+}

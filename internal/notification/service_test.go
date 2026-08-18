@@ -20,13 +20,14 @@ type fakeSender struct {
 	c2cCalls []string // userID
 	chCalls  []string // channelID
 	fail     bool
+	failAt   int // fail exactly on this C2C call when greater than zero
 }
 
 func (f *fakeSender) SendC2CMessage(_ context.Context, userID, _ string) (*dto.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.c2cCalls = append(f.c2cCalls, userID)
-	if f.fail {
+	if f.fail || (f.failAt > 0 && len(f.c2cCalls) == f.failAt) {
 		return nil, errors.New("qq api unavailable")
 	}
 	return &dto.Message{ID: "m-1"}, nil
@@ -165,6 +166,42 @@ func TestHandleEvent_SendFailure(t *testing.T) {
 
 	if err := s.HandleEvent(context.Background(), offlineEvent()); err == nil {
 		t.Fatal("HandleEvent() expected error on send failure, got nil")
+	}
+
+	// 失败不能占用冷却窗口，否则上游重试会被静默丢弃。
+	sender.fail = false
+	if err := s.HandleEvent(context.Background(), offlineEvent()); err != nil {
+		t.Fatalf("HandleEvent() retry error = %v", err)
+	}
+	if sender.c2cCount() != 2 {
+		t.Fatalf("c2c send calls = %d, want 2 (failed send must be retryable)", sender.c2cCount())
+	}
+}
+
+func TestHandleEvent_PartialMultiTargetFailureIsRetryable(t *testing.T) {
+	sender := &fakeSender{failAt: 2}
+	s := newTestService(sender)
+	ev := whitelistEvent("evt-wl-partial", []interface{}{"openid-A", "openid-B"})
+
+	if err := s.HandleEvent(context.Background(), ev); err == nil {
+		t.Fatal("HandleEvent() expected error when one target fails")
+	}
+
+	// The first target was sent before the second failed. A retry must still be
+	// allowed because the notification was not fully delivered.
+	sender.failAt = 0
+	if err := s.HandleEvent(context.Background(), ev); err != nil {
+		t.Fatalf("HandleEvent() retry error = %v", err)
+	}
+	if sender.c2cCount() != 4 {
+		t.Fatalf("c2c send calls = %d, want 4 (partial failure must not commit cooldown)", sender.c2cCount())
+	}
+
+	if err := s.HandleEvent(context.Background(), ev); err != nil {
+		t.Fatalf("HandleEvent() duplicate error = %v", err)
+	}
+	if sender.c2cCount() != 4 {
+		t.Fatalf("c2c send calls = %d, want 4 after successful delivery cooldown", sender.c2cCount())
 	}
 }
 
