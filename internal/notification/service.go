@@ -113,7 +113,8 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 	if ev.EventType == event.EventWhitelistRequestCreated {
 		cooldownKey = ev.ID
 	}
-	if !s.cooldown.Allow(cooldownKey, r.Cooldown) {
+	reservation, ok := s.cooldown.Reserve(cooldownKey, r.Cooldown)
+	if !ok {
 		s.logger.Debug("事件在冷却窗口内，跳过重复通知",
 			zap.String("event_id", ev.ID),
 			zap.String("event_type", ev.EventType),
@@ -129,6 +130,8 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 	// 5. 发送 + 通知日志（event_id / event_type / send_status / error）
 	status, err := s.send(ctx, ev, n)
 	if err != nil {
+		// 只有发送成功才应进入冷却窗口；失败时释放占位，允许上游重试。
+		reservation.Release()
 		s.logger.Error("notification send failed",
 			zap.String("notification_id", n.ID),
 			zap.String("event_id", ev.ID),
@@ -138,6 +141,8 @@ func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 		)
 		return err
 	}
+	// 多目标通知只有在全部目标发送成功后才提交冷却状态。
+	reservation.Commit()
 	s.logger.Info("notification sent",
 		zap.String("notification_id", n.ID),
 		zap.String("event_id", ev.ID),
