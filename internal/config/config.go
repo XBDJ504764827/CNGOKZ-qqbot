@@ -38,7 +38,7 @@ type Config struct {
 	Event EventConfig
 	// Notification 通知系统配置。
 	Notification NotificationConfig
-	// LumiAdmin LumiAdmin 后端集成配置（QQ 审批回写）。
+	// LumiAdmin LumiAdmin 后端集成配置（QQ 审批回写与白名单查询）。
 	LumiAdmin LumiAdminConfig
 	// Log 日志配置。
 	Log LogConfig
@@ -97,10 +97,14 @@ type NotificationConfig struct {
 
 // LumiAdminConfig LumiAdmin 后端集成配置。
 type LumiAdminConfig struct {
-	// CallbackBaseURL LumiAdmin 地址（LUMIADMIN_CALLBACK_URL），LumiBot 回调 LumiAdmin 做 QQ 审批。
+	// CallbackBaseURL LumiAdmin 地址（LUMIADMIN_CALLBACK_URL），LumiBot 回调 LumiAdmin 做 QQ 审批和状态查询。
 	CallbackBaseURL string
-	// IntegrationToken LumiAdmin 的 QQ 集成令牌（LUMIADMIN_QQ_TOKEN），用于调用审批接口鉴权。
+	// IntegrationToken LumiAdmin 的 QQ 集成令牌（LUMIADMIN_QQ_TOKEN），用于调用集成接口鉴权。
 	IntegrationToken string
+	// ApprovalAuditPath QQ 白名单审批审计文件路径（QQ_APPROVAL_AUDIT_PATH）。
+	ApprovalAuditPath string
+	// CommandAuditPath QQ 指令审计文件路径（QQ_COMMAND_AUDIT_PATH）。
+	CommandAuditPath string
 }
 
 // LogConfig 日志配置。
@@ -145,8 +149,10 @@ func Load() (*Config, error) {
 			ChannelTarget: getEnv("NOTIFY_CHANNEL_TARGET", ""),
 		},
 		LumiAdmin: LumiAdminConfig{
-			CallbackBaseURL:  getEnv("LUMIADMIN_CALLBACK_URL", ""),
-			IntegrationToken: getEnv("LUMIADMIN_QQ_TOKEN", ""),
+			CallbackBaseURL:   getEnv("LUMIADMIN_CALLBACK_URL", ""),
+			IntegrationToken:  getEnv("LUMIADMIN_QQ_TOKEN", ""),
+			ApprovalAuditPath: getEnv("QQ_APPROVAL_AUDIT_PATH", "logs/qq-approval-audit.jsonl"),
+			CommandAuditPath:  getEnv("QQ_COMMAND_AUDIT_PATH", "logs/qq-command-audit.jsonl"),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),

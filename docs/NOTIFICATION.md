@@ -108,7 +108,9 @@ KZ服务器01停止响应
 
 - **点「通过」**：LumiBot 调用 LumiAdmin `POST /api/integration/qq/whitelist/:id/review`，提交 `approve` + 管理员 openid，渠道记为 `qq`，操作人记为后台管理员显示名。
 - **点「拒绝」**：LumiBot 反问「请回复拒绝原因」，管理员打字回复后带原因提交 `reject`。
-- **并发安全**：多管理员同时审批同一单时，由 LumiAdmin 数据库原子条件更新保证只成功一次，其余收到「该申请已被他人审批，无法重复操作」。
+- **授权**：仅白名单申请事件 `data.openids` 中的管理员可以操作该申请的按钮；机器人重启后旧按钮没有授权上下文，会被安全拒绝，应由 LumiAdmin 重发通知。
+- **幂等与并发**：同一 `interaction_id` 在 10 分钟内只处理一次；同一申请在单个 LumiBot 实例内同一时刻只允许一个审批回写。多实例和跨进程并发仍由 LumiAdmin 数据库原子条件更新兜底。
+- **审计**：每次收到、拒绝、去重、开始、完成或失败的审批操作都会追加到 `QQ_APPROVAL_AUDIT_PATH` 指定的 JSONL 文件。生产环境应将该文件路径配置到持久化卷并纳入日志采集。
 - **未配置**：无 `LUMIADMIN_CALLBACK_URL` / `LUMIADMIN_QQ_TOKEN` 时，仅发纯文本通知，不启用按钮审批。
 
 ## 6. 通知日志

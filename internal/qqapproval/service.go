@@ -35,10 +35,22 @@ type Sender interface {
 	SendC2CMessageWithKeyboard(ctx context.Context, userID, content string, buttons *keyboard.CustomKeyboard) (*dto.Message, error)
 }
 
+// InteractionAcker 向 QQ 确认按钮互动已被机器人接收。
+type InteractionAcker interface {
+	PutInteraction(ctx context.Context, interactionID string, body string) error
+}
+
 // 按钮动作标识（写在一行避免 gofmt 分段）。
 const (
-	BtnApprove = "approve"
-	BtnReject  = "reject"
+	BtnApprove      = "approve"
+	BtnReject       = "reject"
+	interactionTTL  = 10 * time.Minute
+	auditReceived   = "interaction_received"
+	auditRejected   = "authorization_rejected"
+	auditDuplicated = "interaction_duplicated"
+	auditStarted    = "review_started"
+	auditCompleted  = "review_completed"
+	auditFailed     = "review_failed"
 )
 
 // pendingEntry 待填拒绝原因的一次挂起。
@@ -50,24 +62,31 @@ type pendingEntry struct {
 
 // Service 审批服务。
 type Service struct {
-	sender  Sender
-	baseURL string // LumiAdmin 地址，如 http://127.0.0.1:8081
-	token   string // LumiAdmin QQ Integration Token
-	http    *http.Client
-	pending map[string]*pendingEntry // openid -> 待填拒绝原因
-	names   map[string]string        // whitelistID -> 玩家昵称（按钮点击时还原回复用）
-	nameMu  sync.Mutex
-	reqTTL  time.Duration
-	logger  *zap.Logger
+	sender       Sender
+	acker        InteractionAcker
+	auditor      Auditor
+	baseURL      string // LumiAdmin 地址，如 http://127.0.0.1:8081
+	token        string // LumiAdmin QQ Integration Token
+	http         *http.Client
+	stateMu      sync.Mutex
+	pending      map[string]*pendingEntry       // openid -> 待填拒绝原因
+	names        map[string]string              // whitelistID -> 玩家昵称（按钮点击时还原回复用）
+	authorized   map[string]map[string]struct{} // whitelistID -> allowed openids
+	interactions map[string]time.Time           // interactionID -> expireAt
+	inFlight     map[string]struct{}            // 正在回写的 whitelistID
+	reqTTL       time.Duration
+	logger       *zap.Logger
 }
 
 // Options 构建参数。
 type Options struct {
-	Sender     Sender
-	BaseURL    string
-	Token      string
-	PendingTTL time.Duration // 拒绝原因等待超时
-	HTTPClient *http.Client
+	Sender           Sender
+	InteractionAcker InteractionAcker
+	Auditor          Auditor
+	BaseURL          string
+	Token            string
+	PendingTTL       time.Duration // 拒绝原因等待超时
+	HTTPClient       *http.Client
 }
 
 // New 构建审批服务。
@@ -84,14 +103,19 @@ func New(opts Options, logger *zap.Logger) (*Service, error) {
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
 	return &Service{
-		sender:  opts.Sender,
-		baseURL: strings.TrimRight(opts.BaseURL, "/"),
-		token:   opts.Token,
-		http:    httpClient,
-		pending: make(map[string]*pendingEntry),
-		names:   make(map[string]string),
-		reqTTL:  ttl,
-		logger:  logger,
+		sender:       opts.Sender,
+		acker:        opts.InteractionAcker,
+		auditor:      opts.Auditor,
+		baseURL:      strings.TrimRight(opts.BaseURL, "/"),
+		token:        opts.Token,
+		http:         httpClient,
+		pending:      make(map[string]*pendingEntry),
+		names:        make(map[string]string),
+		authorized:   make(map[string]map[string]struct{}),
+		interactions: make(map[string]time.Time),
+		inFlight:     make(map[string]struct{}),
+		reqTTL:       ttl,
+		logger:       logger,
 	}, nil
 }
 
@@ -109,13 +133,20 @@ type reviewPayload struct {
 }
 
 // BuildKeyboard 为一条白名单申请构建「通过/拒绝」按钮。
-// whitelistID 用于回写时定位；allowOpenids 预留（当前经 data.openids 天然限定），可暂时忽略。
+// whitelistID 用于回写时定位；allowOpenids 是本申请唯一允许审批的 QQ openid。
 // 同时登记 whitelistID -> nickname，供按钮点击时还原玩家昵称（QQ 的 button_data 承载不下昵称，
 // 且可能含 : 等字符，不能塞进按钮数据，故用服务内部映射按 whitelistID 找回）。
 func (s *Service) BuildKeyboard(whitelistID, nickname string, allowOpenids []string) *keyboard.CustomKeyboard {
-	s.nameMu.Lock()
+	s.stateMu.Lock()
 	s.names[whitelistID] = nickname
-	s.nameMu.Unlock()
+	allowed := make(map[string]struct{}, len(allowOpenids))
+	for _, openid := range allowOpenids {
+		if openid != "" {
+			allowed[openid] = struct{}{}
+		}
+	}
+	s.authorized[whitelistID] = allowed
+	s.stateMu.Unlock()
 	return &keyboard.CustomKeyboard{
 		Rows: []*keyboard.Row{
 			{Buttons: []*keyboard.Button{
@@ -132,6 +163,8 @@ func (s *Service) BuildKeyboard(whitelistID, nickname string, allowOpenids []str
 
 // BeginRejectReason 发起一次「等待拒绝原因」挂起。
 func (s *Service) BeginRejectReason(openid, whitelistID, nickname string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.pending[openid] = &pendingEntry{
 		whitelistID: whitelistID,
 		nickname:    nickname,
@@ -145,6 +178,12 @@ func (s *Service) PeekPending(openid string) bool {
 }
 
 func (s *Service) peekPending(openid string) *pendingEntry {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.peekPendingLocked(openid)
+}
+
+func (s *Service) peekPendingLocked(openid string) *pendingEntry {
 	e, ok := s.pending[openid]
 	if !ok {
 		return nil
@@ -158,17 +197,72 @@ func (s *Service) peekPending(openid string) *pendingEntry {
 
 // nameFor 按 whitelistID 取回登记的玩家昵称；未知则返回空。
 func (s *Service) nameFor(whitelistID string) string {
-	s.nameMu.Lock()
-	defer s.nameMu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	return s.names[whitelistID]
 }
 
 func (s *Service) takePending(openid string) *pendingEntry {
-	e := s.peekPending(openid)
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	e := s.peekPendingLocked(openid)
 	if e != nil {
 		delete(s.pending, openid)
 	}
 	return e
+}
+
+func (s *Service) authorizedFor(whitelistID, openid string) bool {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	_, ok := s.authorized[whitelistID][openid]
+	return ok
+}
+
+// claimInteraction 返回 false 表示同一互动已在 TTL 内处理过。
+func (s *Service) claimInteraction(interactionID string) bool {
+	if interactionID == "" {
+		return true
+	}
+	now := time.Now()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	for id, expiresAt := range s.interactions {
+		if !now.Before(expiresAt) {
+			delete(s.interactions, id)
+		}
+	}
+	if _, exists := s.interactions[interactionID]; exists {
+		return false
+	}
+	s.interactions[interactionID] = now.Add(interactionTTL)
+	return true
+}
+
+// beginReview 返回 false 表示该申请正在由另一个操作回写。
+func (s *Service) beginReview(whitelistID string) bool {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if _, exists := s.inFlight[whitelistID]; exists {
+		return false
+	}
+	s.inFlight[whitelistID] = struct{}{}
+	return true
+}
+
+func (s *Service) endReview(whitelistID string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	delete(s.inFlight, whitelistID)
+}
+
+func (s *Service) audit(event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	if err := s.auditor.Record(event); err != nil {
+		s.logger.Error("QQ 审批审计写入失败", zap.String("event", event.Event), zap.Error(err))
+	}
 }
 
 // review 调用 LumiAdmin 审批接口。
@@ -243,12 +337,29 @@ func (s *Service) SubmitRejectReason(ctx context.Context, openid, reason string)
 	if reason == "" {
 		return "", fmt.Errorf("拒绝原因不能为空")
 	}
+	if !s.beginReview(e.whitelistID) {
+		s.BeginRejectReason(openid, e.whitelistID, e.nickname)
+		return "", fmt.Errorf("该申请正在审批处理中")
+	}
+	defer s.endReview(e.whitelistID)
+	s.audit(AuditEvent{
+		Event: auditStarted, WhitelistID: e.whitelistID, Nickname: e.nickname, OpenID: openid,
+		Action: BtnReject, Reason: reason, Result: "started",
+	})
 	err := s.review(ctx, e.whitelistID, "reject", openid, reason, false)
 	if err != nil {
 		// 失败时恢复挂起，允许重试
 		s.BeginRejectReason(openid, e.whitelistID, e.nickname)
+		s.audit(AuditEvent{
+			Event: auditFailed, WhitelistID: e.whitelistID, Nickname: e.nickname, OpenID: openid,
+			Action: BtnReject, Reason: reason, Result: "failed", Error: err.Error(),
+		})
 		return "", err
 	}
+	s.audit(AuditEvent{
+		Event: auditCompleted, WhitelistID: e.whitelistID, Nickname: e.nickname, OpenID: openid,
+		Action: BtnReject, Reason: reason, Result: "rejected",
+	})
 	return e.nickname, nil
 }
 
@@ -317,24 +428,44 @@ func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nic
 	}
 	switch action {
 	case BtnApprove:
+		s.audit(AuditEvent{
+			Event: auditStarted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+			Action: action, Result: "started",
+		})
 		err := s.Approve(ctx, whitelistID, openid)
 		if err == nil {
+			s.audit(AuditEvent{
+				Event: auditCompleted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+				Action: action, Result: "approved",
+			})
 			_, _ = s.sender.SendC2CMessage(ctx, openid,
 				fmt.Sprintf("玩家「%s」的白名单申请已通过 ✅", nickname))
 			return nil
 		}
 		var re *ReviewError
 		if ok := errors.As(err, &re); ok && re.AlreadyReviewed {
+			s.audit(AuditEvent{
+				Event: auditCompleted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+				Action: action, Result: "already_reviewed", Error: err.Error(),
+			})
 			_, _ = s.sender.SendC2CMessage(ctx, openid,
 				"该申请已被其他管理员审批了，无需重复操作。")
 			return nil
 		}
 		s.logger.Warn("QQ 审批：通过失败", zap.String("whitelist_id", whitelistID), zap.Error(err))
+		s.audit(AuditEvent{
+			Event: auditFailed, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+			Action: action, Result: "failed", Error: err.Error(),
+		})
 		_, _ = s.sender.SendC2CMessage(ctx, openid,
 			fmt.Sprintf("操作失败：%v", err))
 	case BtnReject:
 		// 进入「等待拒绝原因」状态，反问原因
 		s.BeginRejectReason(openid, whitelistID, nickname)
+		s.audit(AuditEvent{
+			Event: auditStarted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+			Action: action, Result: "awaiting_reason",
+		})
 		_, _ = s.sender.SendC2CMessage(ctx, openid,
 			fmt.Sprintf("请回复拒绝玩家「%s」的申请原因（5 分钟内有效）：", nickname))
 	default:

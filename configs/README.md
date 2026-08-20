@@ -27,6 +27,10 @@
 | `NOTICE_COOLDOWN` | 否 | `300` | 通知冷却时间（秒），同一事件类型窗口内重复事件只通知一次 |
 | `NOTIFY_PRIVATE_TARGET` | 否 | 空（跳过私聊通知） | QQ_PRIVATE 渠道目标：管理员 QQ openid |
 | `NOTIFY_CHANNEL_TARGET` | 否 | 空 | QQ_CHANNEL 渠道目标：子频道 ID |
+| `LUMIADMIN_CALLBACK_URL` | 否 | 空 | LumiAdmin 地址，用于 QQ 审批和 `/wl` 白名单状态查询 |
+| `LUMIADMIN_QQ_TOKEN` | 否 | 空 | LumiAdmin QQ 集成令牌，用于 QQ 审批和 `/wl` 查询鉴权 |
+| `QQ_APPROVAL_AUDIT_PATH` | 否 | `logs/qq-approval-audit.jsonl` | 白名单 QQ 审批审计 JSONL 文件；生产环境配置到持久化卷 |
+| `QQ_COMMAND_AUDIT_PATH` | 否 | `logs/qq-command-audit.jsonl` | QQ 指令审计 JSONL 文件（如 `/bind`）；生产环境配置到持久化卷 |
 
 > 优先级：进程环境变量 > `.env` 文件 > 默认值。`.env` 文件仅作为默认值来源，
 > 同名环境变量始终覆盖文件中的值。

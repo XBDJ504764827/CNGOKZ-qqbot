@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,40 @@ import (
 type fakeSender struct {
 	mu  sync.Mutex
 	c2c []string // contents
+}
+
+type fakeInteractionAcker struct {
+	interactionID string
+	body          string
+}
+
+type fakeAuditor struct {
+	mu     sync.Mutex
+	events []AuditEvent
+}
+
+func (f *fakeAuditor) Record(event AuditEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, event)
+	return nil
+}
+
+func (f *fakeAuditor) hasEvent(name, result string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, event := range f.events {
+		if event.Event == name && event.Result == result {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeInteractionAcker) PutInteraction(_ context.Context, interactionID, body string) error {
+	f.interactionID = interactionID
+	f.body = body
+	return nil
 }
 
 func (f *fakeSender) SendC2CMessage(_ context.Context, _, content string) (*dto.Message, error) {
@@ -41,6 +76,12 @@ func lastMSG(f *fakeSender) string {
 		return ""
 	}
 	return f.c2c[len(f.c2c)-1]
+}
+
+func messageCount(f *fakeSender) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.c2c)
 }
 
 func newTestSvc(f *fakeSender, srv *httptest.Server) *Service {
@@ -95,6 +136,114 @@ func TestParseAction(t *testing.T) {
 			t.Errorf("ParseAction(%q) = (%q,%q,%v), want (%q,%q,%v)",
 				c.in, a, wl, ok, c.action, c.wl, c.wantOK)
 		}
+	}
+}
+
+func TestHandleInteractionAcknowledgesButtonClick(t *testing.T) {
+	srv := bootServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	f := &fakeSender{}
+	acker := &fakeInteractionAcker{}
+	s, err := New(Options{
+		Sender:           f,
+		InteractionAcker: acker,
+		BaseURL:          srv.URL,
+		Token:            "test-token",
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	s.BuildKeyboard("wl-1", "张三", []string{"openid-1"})
+
+	interaction := &dto.WSInteractionData{
+		ID:         "interaction-1",
+		UserOpenID: "openid-1",
+		Data: &dto.InteractionData{
+			Resolved: json.RawMessage(`{"button_data":"approve:wl-1"}`),
+		},
+	}
+	if err := s.HandleInteraction(context.Background(), interaction); err != nil {
+		t.Fatalf("HandleInteraction() error = %v", err)
+	}
+	if acker.interactionID != "interaction-1" || acker.body != `{"code":0}` {
+		t.Fatalf("interaction ack = (%q, %q), want (%q, %q)",
+			acker.interactionID, acker.body, "interaction-1", `{"code":0}`)
+	}
+	if !strings.Contains(lastMSG(f), "已通过") {
+		t.Fatalf("reply missing approval result: %q", lastMSG(f))
+	}
+}
+
+func TestHandleInteractionRejectsUnauthorizedUser(t *testing.T) {
+	f := &fakeSender{}
+	audit := &fakeAuditor{}
+	s, err := New(Options{Sender: f, Auditor: audit}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	s.BuildKeyboard("wl-1", "张三", []string{"authorized-openid"})
+
+	err = s.HandleInteraction(context.Background(), &dto.WSInteractionData{
+		ID: "interaction-1", UserOpenID: "unauthorized-openid",
+		Data: &dto.InteractionData{Resolved: json.RawMessage(`{"button_data":"approve:wl-1"}`)},
+	})
+	if err != nil {
+		t.Fatalf("HandleInteraction() error = %v", err)
+	}
+	if !strings.Contains(lastMSG(f), "没有该白名单申请的审批权限") {
+		t.Fatalf("reply = %q", lastMSG(f))
+	}
+	if !audit.hasEvent(auditRejected, "unauthorized") {
+		t.Fatal("missing unauthorized audit event")
+	}
+}
+
+func TestHandleInteractionDeduplicatesInteractionID(t *testing.T) {
+	f := &fakeSender{}
+	audit := &fakeAuditor{}
+	s, err := New(Options{Sender: f, Auditor: audit}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	s.BuildKeyboard("wl-1", "张三", []string{"openid-1"})
+	interaction := &dto.WSInteractionData{
+		ID: "interaction-1", UserOpenID: "openid-1",
+		Data: &dto.InteractionData{Resolved: json.RawMessage(`{"button_data":"reject:wl-1"}`)},
+	}
+	if err := s.HandleInteraction(context.Background(), interaction); err != nil {
+		t.Fatalf("first HandleInteraction() error = %v", err)
+	}
+	if err := s.HandleInteraction(context.Background(), interaction); err != nil {
+		t.Fatalf("second HandleInteraction() error = %v", err)
+	}
+	if got := messageCount(f); got != 1 {
+		t.Fatalf("message count = %d, want 1", got)
+	}
+	if !audit.hasEvent(auditDuplicated, "duplicate_interaction") {
+		t.Fatal("missing duplicate interaction audit event")
+	}
+}
+
+func TestFileAuditorWritesJSONL(t *testing.T) {
+	path := t.TempDir() + "/approval-audit.jsonl"
+	auditor, err := NewFileAuditor(path)
+	if err != nil {
+		t.Fatalf("NewFileAuditor() error = %v", err)
+	}
+	if err := auditor.Record(AuditEvent{Event: auditCompleted, WhitelistID: "wl-1", Result: "approved"}); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+	if err := auditor.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(content), `"whitelist_id":"wl-1"`) {
+		t.Fatalf("audit content = %q", content)
 	}
 }
 
