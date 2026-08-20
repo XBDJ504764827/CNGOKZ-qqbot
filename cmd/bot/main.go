@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/tencent-connect/botgo"
-	"github.com/tencent-connect/botgo/dto"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
@@ -24,7 +23,6 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
-	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
 	"github.com/XBDJ504764827/LumiBot/internal/qqapproval"
@@ -58,21 +56,15 @@ func main() {
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 
-	// QQ 指令：查询玩家白名单状态（/wl steamid64/steamid2）。
-	// 查询接口与 QQ 审批共用 LumiAdmin 回调地址和集成令牌。
-	lumiAdminClient := lumiadmin.NewClient(
-		cfg.LumiAdmin.CallbackBaseURL,
-		cfg.LumiAdmin.IntegrationToken,
-		nil,
-	)
-	whitelistCommand := command.NewWhitelistHandler(sender, lumiAdminClient, zapLogger)
-	banCommand := command.NewBanHandler(sender, lumiAdminClient, zapLogger)
-	receiver.OnCommand = func(ctx context.Context, msg *dto.Message) (bool, error) {
-		if handled, err := whitelistCommand.Handle(ctx, msg); handled || err != nil {
-			return handled, err
-		}
-		return banCommand.Handle(ctx, msg)
+	// QQ 指令审计单独存储，避免与白名单审批审计混在同一个文件。
+	commandAuditor, err := command.NewFileAuditor(cfg.LumiAdmin.CommandAuditPath)
+	if err != nil {
+		fatalf("初始化 QQ 指令审计失败: %v", err)
 	}
+	defer func() { _ = commandAuditor.Close() }()
+	bindCommand := command.NewBindHandler(sender, commandAuditor, zapLogger)
+	receiver.OnCommand = command.NewRouter(bindCommand).Handle
+
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）

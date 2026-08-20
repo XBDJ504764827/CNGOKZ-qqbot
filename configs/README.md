@@ -30,6 +30,7 @@
 | `LUMIADMIN_CALLBACK_URL` | 否 | 空 | LumiAdmin 地址，用于 QQ 审批和 `/wl` 白名单状态查询 |
 | `LUMIADMIN_QQ_TOKEN` | 否 | 空 | LumiAdmin QQ 集成令牌，用于 QQ 审批和 `/wl` 查询鉴权 |
 | `QQ_APPROVAL_AUDIT_PATH` | 否 | `logs/qq-approval-audit.jsonl` | 白名单 QQ 审批审计 JSONL 文件；生产环境配置到持久化卷 |
+| `QQ_COMMAND_AUDIT_PATH` | 否 | `logs/qq-command-audit.jsonl` | QQ 指令审计 JSONL 文件（如 `/bind`）；生产环境配置到持久化卷 |
 
 > 优先级：进程环境变量 > `.env` 文件 > 默认值。`.env` 文件仅作为默认值来源，
 > 同名环境变量始终覆盖文件中的值。

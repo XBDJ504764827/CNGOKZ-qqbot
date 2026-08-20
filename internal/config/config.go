@@ -103,6 +103,8 @@ type LumiAdminConfig struct {
 	IntegrationToken string
 	// ApprovalAuditPath QQ 白名单审批审计文件路径（QQ_APPROVAL_AUDIT_PATH）。
 	ApprovalAuditPath string
+	// CommandAuditPath QQ 指令审计文件路径（QQ_COMMAND_AUDIT_PATH）。
+	CommandAuditPath string
 }
 
 // LogConfig 日志配置。
@@ -150,6 +152,7 @@ func Load() (*Config, error) {
 			CallbackBaseURL:   getEnv("LUMIADMIN_CALLBACK_URL", ""),
 			IntegrationToken:  getEnv("LUMIADMIN_QQ_TOKEN", ""),
 			ApprovalAuditPath: getEnv("QQ_APPROVAL_AUDIT_PATH", "logs/qq-approval-audit.jsonl"),
+			CommandAuditPath:  getEnv("QQ_COMMAND_AUDIT_PATH", "logs/qq-command-audit.jsonl"),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),

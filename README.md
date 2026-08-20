@@ -41,8 +41,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
 │   │   ├── event.go           # QQ 事件注册（含群聊 / 私聊消息）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
-│   ├── command/               # QQ 指令处理（/wl、/ban）
-│   ├── lumiadmin/             # LumiAdmin HTTP 集成客户端
+│   ├── command/               # QQ 指令处理（/bind、/wl、/ban）
 │   ├── message/
 │   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
 │   │   └── receiver.go        # QQ 消息接收处理
@@ -105,29 +104,17 @@ main.go
 INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "zzzz", "content": "hello"}
 ```
 
-## QQ 指令：`/wl` 白名单状态查询
+## QQ 指令：`/bind` 获取 QQ OpenID
 
-用户可以在 QQ 私聊机器人，或群聊中直接发送：
-
-```text
-/wl <steamid64/steamid2>
-```
-
-支持 SteamID64、SteamID2 和 Steam 个人主页 URL；帮助文案只宣传 SteamID64 / SteamID2。所有用户都可以查询。查询结果包含该 Steam 账号的全部白名单历史记录，并显示每条记录的状态和时间；拒绝记录会显示拒绝原因，缺少原因时显示“未填写拒绝原因”。未找到记录时显示“该玩家可能未申请白名单”。
-
-详细规则见 [docs/WHITELIST_COMMAND.md](docs/WHITELIST_COMMAND.md)。
-
-## QQ 指令：`/ban` 封禁信息查询
-
-用户可以使用：
+用户在 QQ 私聊机器人发送：
 
 ```text
-/ban <steamid64/steamid2>
+/bind
 ```
 
-指令会同时查询 LumiAdmin 中的网站封禁和全球封禁，显示全部两类历史记录的状态、原因、封禁时间和到期时间；时间统一按北京时间展示，每类最多显示最近 10 条。输入格式和 `/wl` 一致，也支持 Steam 个人主页 URL。
+机器人会回复当前私聊用户的 QQ OpenID，用户可复制到 LumiAdmin“编辑管理员信息”的“通知openid”字段，用于接收 QQ 机器人通知。该指令只支持私聊，每位用户每分钟最多 5 次，审计记录写入独立的 `QQ_COMMAND_AUDIT_PATH` 文件。
 
-详细规则见 [docs/BAN_COMMAND.md](docs/BAN_COMMAND.md)。
+详细规则见 [docs/BIND_COMMAND.md](docs/BIND_COMMAND.md)。
 
 ## 统一事件系统（事件通知中心）
 
@@ -222,7 +209,7 @@ systemctl enable --now lumibot
 
 | 阶段 | 内容 |
 | --- | --- |
-| 第三阶段 | ✅ 指令系统：已实现 `/wl` 白名单状态查询和 `/ban` 封禁信息查询 |
+| 第三阶段 | ✅ 指令系统：已实现 `/bind` OpenID 获取、`/wl` 白名单状态查询和 `/ban` 封禁信息查询 |
 | 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
 | 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |

@@ -13,12 +13,12 @@ import (
 // 可注入 OnUserText 回调，用于拦截私聊/消息并交给上层业务（如 QQ 审批的拒绝原因）。
 type Receiver struct {
 	logger *zap.Logger
+	// OnCommand 可选的指令处理回调，返回 handled=true 表示已消费。
+	// 指令优先于 OnUserText，避免显式指令被审批文本流程误消费。
+	OnCommand func(ctx context.Context, msg *dto.Message) (handled bool, err error)
 	// OnUserText 可选的用户文本回调（openid, content），返回 handled=true 表示已消费。
 	// 审批服务使用该回调消费等待中的拒绝原因。
 	OnUserText func(ctx context.Context, openid, content string) (handled bool, err error)
-	// OnCommand 可选的指令回调。它在 OnUserText 未消费消息后执行，
-	// 使审批文本与普通指令可以共存。
-	OnCommand func(ctx context.Context, msg *dto.Message) (handled bool, err error)
 }
 
 // NewReceiver 构建消息接收处理器。
@@ -30,7 +30,7 @@ func NewReceiver(logger *zap.Logger) *Receiver {
 func (r *Receiver) ReceiveMessage(ctx context.Context, msg *dto.Message) error {
 	openid := authorID(msg.Author)
 
-	// 先处理显式指令，避免管理员等待拒绝原因时发送 /wl 被当作拒绝理由。
+	// 显式指令优先处理，例如 /bind 不应被审批拒绝原因流程消费。
 	if r.OnCommand != nil {
 		handled, err := r.OnCommand(ctx, msg)
 		if err != nil {
@@ -41,7 +41,7 @@ func (r *Receiver) ReceiveMessage(ctx context.Context, msg *dto.Message) error {
 		}
 	}
 
-	// 未匹配指令时，再交给上层文本回调（例如 QQ 审批拒绝原因）。
+	// 指令未消费消息时，再交给上层文本回调（例如 QQ 审批拒绝原因）。
 	if r.OnUserText != nil {
 		handled, err := r.OnUserText(ctx, openid, msg.Content)
 		if err != nil {
