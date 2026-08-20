@@ -19,9 +19,6 @@ type Receiver struct {
 	// OnUserText 可选的用户文本回调（openid, content），返回 handled=true 表示已消费。
 	// 审批服务使用该回调消费等待中的拒绝原因。
 	OnUserText func(ctx context.Context, openid, content string) (handled bool, err error)
-	// OnCommand 可选的指令回调。它在 OnUserText 未消费消息后执行，
-	// 使审批文本与普通指令可以共存。
-	OnCommand func(ctx context.Context, msg *dto.Message) (handled bool, err error)
 }
 
 // NewReceiver 构建消息接收处理器。
@@ -44,8 +41,7 @@ func (r *Receiver) ReceiveMessage(ctx context.Context, msg *dto.Message) error {
 		}
 	}
 
-	// 若注册了用户文本回调，再交给上层业务判断是否消费（例如 QQ 审批拒绝原因）。
-	// 未匹配指令时，再交给上层文本回调（例如 QQ 审批拒绝原因）。
+	// 指令未消费消息时，再交给上层文本回调（例如 QQ 审批拒绝原因）。
 	if r.OnUserText != nil {
 		handled, err := r.OnUserText(ctx, openid, msg.Content)
 		if err != nil {

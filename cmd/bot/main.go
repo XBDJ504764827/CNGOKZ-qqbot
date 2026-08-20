@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/tencent-connect/botgo"
-	"github.com/tencent-connect/botgo/dto"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
@@ -24,7 +23,6 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
-	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
 	"github.com/XBDJ504764827/LumiBot/internal/qqapproval"

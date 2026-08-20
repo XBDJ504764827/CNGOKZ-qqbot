@@ -13,13 +13,6 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 )
 
-// MessageSender 是指令回复所需的最小消息发送接口。
-type MessageSender interface {
-	SendC2CMessage(ctx context.Context, userID, content string) (*dto.Message, error)
-	SendGroupMessage(ctx context.Context, groupID, content string) (*dto.Message, error)
-	SendChannelMessage(ctx context.Context, channelID, content string) (*dto.Message, error)
-}
-
 // WhitelistHandler 处理 /wl 白名单状态查询指令。
 type WhitelistHandler struct {
 	sender  MessageSender
@@ -169,11 +162,4 @@ func (h *WhitelistHandler) reply(ctx context.Context, msg *dto.Message, content 
 		return err
 	}
 	return fmt.Errorf("发送指令回复失败：消息缺少群、用户或频道目标")
-}
-
-func authorID(msg *dto.Message) string {
-	if msg == nil || msg.Author == nil {
-		return ""
-	}
-	return msg.Author.ID
 }
