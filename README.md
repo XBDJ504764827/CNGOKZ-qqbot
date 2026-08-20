@@ -41,6 +41,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
 │   │   ├── event.go           # QQ 事件注册（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
+│   ├── command/               # QQ 指令处理（/bind、/wl、/ban）
 │   ├── message/
 │   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
 │   │   └── receiver.go        # QQ 消息接收处理
@@ -100,6 +101,18 @@ main.go
 ```
 INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "zzzz", "content": "hello"}
 ```
+
+## QQ 指令：`/bind` 获取 QQ OpenID
+
+用户在 QQ 私聊机器人发送：
+
+```text
+/bind
+```
+
+机器人会回复当前私聊用户的 QQ OpenID，用户可复制到 LumiAdmin“编辑管理员信息”的“通知openid”字段，用于接收 QQ 机器人通知。该指令只支持私聊，每位用户每分钟最多 5 次，审计记录写入独立的 `QQ_COMMAND_AUDIT_PATH` 文件。
+
+详细规则见 [docs/BIND_COMMAND.md](docs/BIND_COMMAND.md)。
 
 ## 统一事件系统（事件通知中心）
 
@@ -194,7 +207,7 @@ systemctl enable --now lumibot
 
 | 阶段 | 内容 |
 | --- | --- |
-| 第三阶段 | 指令系统：解析消息 → 指令路由 → 回复（通过 `message.Receiver` 扩展） |
+| 第三阶段 | ✅ 指令系统：已实现 `/bind` OpenID 获取、`/wl` 白名单状态查询和 `/ban` 封禁信息查询 |
 | 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
 | 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |

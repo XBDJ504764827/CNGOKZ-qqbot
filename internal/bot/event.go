@@ -71,6 +71,9 @@ func atMessageHandler(h *Handler, logger *zap.Logger) event.ATMessageEventHandle
 // 用于获取管理员 openid 配置与未来的用户绑定流程。
 func c2cMessageHandler(h *Handler, logger *zap.Logger) event.C2CMessageEventHandler {
 	return func(_ *dto.WSPayload, data *dto.WSC2CMessageData) error {
+		// botgo 的 C2C payload 类型与群/频道消息共用 dto.Message；显式标记
+		// 私聊来源，供只允许私聊的指令（如 /bind）进行可靠判断。
+		data.DirectMessage = true
 		if err := h.OnC2CMessage(context.Background(), (*dto.Message)(data)); err != nil {
 			logger.Warn("处理 C2C_MESSAGE_CREATE 事件失败", zap.Error(err))
 		}

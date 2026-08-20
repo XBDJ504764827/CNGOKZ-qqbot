@@ -19,6 +19,7 @@ import (
 
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
+	"github.com/XBDJ504764827/LumiBot/internal/command"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
@@ -54,6 +55,16 @@ func main() {
 	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
+
+	// QQ 指令审计单独存储，避免与白名单审批审计混在同一个文件。
+	commandAuditor, err := command.NewFileAuditor(cfg.LumiAdmin.CommandAuditPath)
+	if err != nil {
+		fatalf("初始化 QQ 指令审计失败: %v", err)
+	}
+	defer func() { _ = commandAuditor.Close() }()
+	bindCommand := command.NewBindHandler(sender, commandAuditor, zapLogger)
+	receiver.OnCommand = command.NewRouter(bindCommand).Handle
+
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）
