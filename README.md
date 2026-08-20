@@ -39,8 +39,10 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   ├── bot/
 │   │   ├── client.go          # Bot Client：openapi 工厂 + 生命周期
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
-│   │   ├── event.go           # QQ 事件注册（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
+│   │   ├── event.go           # QQ 事件注册（含群聊 / 私聊消息）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
+│   ├── command/               # QQ 指令（/wl 白名单状态查询）
+│   ├── lumiadmin/             # LumiAdmin HTTP 集成客户端
 │   ├── message/
 │   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
 │   │   └── receiver.go        # QQ 消息接收处理
@@ -78,7 +80,7 @@ main.go
   ↓
 创建 Bot Client（NewOpenAPI：沙箱/正式 + BOT_DEBUG）
   ↓
-注册事件 Handler（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
+注册事件 Handler（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE / C2C / GROUP_AT）
   ↓
 连接 QQ Gateway（websocket 长连接，断线自动重连）
 ```
@@ -92,6 +94,8 @@ main.go
 | `READY` | 网关连接就绪（打印 bot 信息） | `bot/handler.go OnReady` |
 | `MESSAGE_CREATE` | 频道消息（打印 user_id / channel_id / content） | `message/receiver.go` |
 | `AT_MESSAGE_CREATE` | 频道内 @机器人 消息 | `message/receiver.go` |
+| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/wl`） | `message/receiver.go` |
+| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（支持 `/wl`） | `message/receiver.go` |
 | ERROR_NOTIFY | 网关连接异常（内部回调，记录错误日志） | `bot/handler.go OnError` |
 | PLAIN | 未注册事件兑底（透传 debug 日志） | `bot/handler.go OnPlain` |
 
@@ -100,6 +104,18 @@ main.go
 ```
 INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "zzzz", "content": "hello"}
 ```
+
+## QQ 指令：`/wl` 白名单状态查询
+
+用户可以在 QQ 私聊机器人，或群聊中直接发送：
+
+```text
+/wl <steamid64/steamid2>
+```
+
+支持 SteamID64、SteamID2 和 Steam 个人主页 URL；帮助文案只宣传 SteamID64 / SteamID2。所有用户都可以查询。查询结果包含该 Steam 账号的全部白名单历史记录，并显示每条记录的状态和时间；拒绝记录会显示拒绝原因，缺少原因时显示“未填写拒绝原因”。未找到记录时显示“该玩家可能未申请白名单”。
+
+详细规则见 [docs/WHITELIST_COMMAND.md](docs/WHITELIST_COMMAND.md)。
 
 ## 统一事件系统（事件通知中心）
 
@@ -142,7 +158,7 @@ Event → 规则判断（rule）→ 模板渲染（template）→ 冷却防刷�
 ## 开发说明
 
 - **新增事件**：在 `internal/bot/event.go` 注册回调 → 在 `internal/bot/handler.go` 增加分发方法 → 在 `message` 层实现业务逻辑
-- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），未来供 LumiAdmin 通过 `POST /api/message/send` 调用
+- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），供通知和 `/wl` 指令回复使用
 - **错误处理**：统一返回 error 并记录日志，禁止 panic（除启动失败）；启动失败由 main 输出 FATAL 退出
 - **测试**：`go test ./...`（配置 / 事件注册 / 消息收发均有单测）
 
@@ -194,7 +210,7 @@ systemctl enable --now lumibot
 
 | 阶段 | 内容 |
 | --- | --- |
-| 第三阶段 | 指令系统：解析消息 → 指令路由 → 回复（通过 `message.Receiver` 扩展） |
+| 第三阶段 | ✅ 指令系统：已实现 `/wl` 白名单状态查询 |
 | 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
 | 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |

@@ -19,9 +19,11 @@ import (
 
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
+	"github.com/XBDJ504764827/LumiBot/internal/command"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
+	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
 	"github.com/XBDJ504764827/LumiBot/internal/qqapproval"
@@ -54,6 +56,16 @@ func main() {
 	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
+
+	// QQ 指令：查询玩家白名单状态（/wl steamid64/steamid2）。
+	// 查询接口与 QQ 审批共用 LumiAdmin 回调地址和集成令牌。
+	lumiAdminClient := lumiadmin.NewClient(
+		cfg.LumiAdmin.CallbackBaseURL,
+		cfg.LumiAdmin.IntegrationToken,
+		nil,
+	)
+	whitelistCommand := command.NewWhitelistHandler(sender, lumiAdminClient, zapLogger)
+	receiver.OnCommand = whitelistCommand.Handle
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）

@@ -16,6 +16,7 @@ import (
 //   - MESSAGE_CREATE       频道消息
 //   - AT_MESSAGE_CREATE    频道内 @机器人 消息
 //   - C2C_MESSAGE_CREATE   私聊消息（用于获取用户 openid / 绑定）
+//   - GROUP_AT_MESSAGE_CREATE 群聊消息（群内 /wl 指令）
 //   - ERROR_NOTIFY         网关连接异常（SDK 内部回调）
 //   - PLAIN                未注册事件兜底（透传日志）
 //
@@ -27,6 +28,7 @@ func RegisterEvents(h *Handler, logger *zap.Logger) dto.Intent {
 		messageCreateHandler(h, logger),
 		atMessageHandler(h, logger),
 		c2cMessageHandler(h, logger),
+		groupATMessageHandler(h, logger),
 		interactionHandler(h, logger),
 		plainHandler(h),
 	)
@@ -73,6 +75,17 @@ func c2cMessageHandler(h *Handler, logger *zap.Logger) event.C2CMessageEventHand
 	return func(_ *dto.WSPayload, data *dto.WSC2CMessageData) error {
 		if err := h.OnC2CMessage(context.Background(), (*dto.Message)(data)); err != nil {
 			logger.Warn("处理 C2C_MESSAGE_CREATE 事件失败", zap.Error(err))
+		}
+		return nil
+	}
+}
+
+// groupATMessageHandler GROUP_AT_MESSAGE_CREATE 事件：群中消息。
+// 指令处理器只匹配 /wl 前缀，因此群消息无需额外 @ 解析。
+func groupATMessageHandler(h *Handler, logger *zap.Logger) event.GroupATMessageEventHandler {
+	return func(_ *dto.WSPayload, data *dto.WSGroupATMessageData) error {
+		if err := h.OnGroupMessage(context.Background(), (*dto.Message)(data)); err != nil {
+			logger.Warn("处理 GROUP_AT_MESSAGE_CREATE 事件失败", zap.Error(err))
 		}
 		return nil
 	}

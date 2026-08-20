@@ -8,9 +8,51 @@
 | 接口 | 方法 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
 | `/api/v1/events` | POST | X-API-Key | 事件上报（统一事件系统入口） |
+| `/api/integration/qq/whitelist/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 查询白名单状态接口（全部历史记录） |
 | `/health` | GET | 无 | 健康检查 |
 
-## 1. POST /api/v1/events — 事件上报
+## 1. GET /api/integration/qq/whitelist/status — QQ 查询白名单状态
+
+供 LumiBot 的 `/wl` 指令调用。请求需要使用与 QQ 审批相同的 `X-QQ-Token` Header，也接受 `Authorization: Bearer <token>`。
+
+请求示例：
+
+```bash
+curl -G http://127.0.0.1:3001/api/integration/qq/whitelist/status \\
+  -H 'X-QQ-Token: integration-secret' \\
+  --data-urlencode 'steam_input=STEAM_0:1:12345'
+```
+
+响应返回解析后的 SteamID64 和全部历史白名单记录：
+
+```json
+{
+  "steamid64": "76561198012345678",
+  "steamid": "STEAM_0:1:12345",
+  "items": [
+    {
+      "id": "uuid",
+      "steamid64": "76561198012345678",
+      "steamid": "STEAM_0:1:12345",
+      "status": "rejected",
+      "applied_at": "2026-08-01T10:00:00Z",
+      "rejected_at": "2026-08-01T11:00:00Z",
+      "rejection_reason": "信息不完整"
+    }
+  ]
+}
+```
+
+支持 SteamID64、SteamID2 和 Steam 个人主页 URL。无记录时 `items` 为空数组。接口不会返回联系方式、审核人等敏感字段。
+
+| HTTP 状态 | 场景 |
+| --- | --- |
+| `200` | 查询成功，可能没有记录 |
+| `400` | Steam 标识格式错误或参数无效 |
+| `401` | 集成令牌缺失或无效 |
+| `500` | 数据库查询失败 |
+
+## 2. POST /api/v1/events — 事件上报
 
 外部系统产生事件（举报、告警、服务器离线、管理操作等）时调用，
 事件经 Event Bus 分发到各订阅者（QQ 通知、日志等）。

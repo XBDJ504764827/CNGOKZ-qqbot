@@ -43,6 +43,14 @@ func TestHandler_OnC2CMessage(t *testing.T) {
 	}
 }
 
+func TestHandler_OnGroupMessage(t *testing.T) {
+	h := newTestHandler()
+	msg := &dto.Message{ID: "msg-4", GroupID: "group-1", Content: "/wl 76561198012345678", Author: &dto.User{ID: "member-1"}}
+	if err := h.OnGroupMessage(context.Background(), msg); err != nil {
+		t.Fatalf("OnGroupMessage() error = %v", err)
+	}
+}
+
 // TestHandler_OnReadyOnErrorOnPlain 验证连接类事件分发不 panic。
 func TestHandler_OnReadyOnErrorOnPlain(t *testing.T) {
 	h := newTestHandler()
