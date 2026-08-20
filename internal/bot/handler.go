@@ -61,6 +61,12 @@ func (h *Handler) OnC2CMessage(ctx context.Context, msg *dto.Message) error {
 	return h.receiver.ReceiveMessage(ctx, msg)
 }
 
+// OnGroupMessage 分发 GROUP_AT_MESSAGE_CREATE 事件：群消息。
+// QQ 官方事件目前只推送 @机器人 的群消息，但指令处理不要求消息正文包含 @。
+func (h *Handler) OnGroupMessage(ctx context.Context, msg *dto.Message) error {
+	return h.receiver.ReceiveMessage(ctx, msg)
+}
+
 // OnInteraction 分发 INTERACTION_CREATE 事件（消息按钮点击等）。
 func (h *Handler) OnInteraction(ctx context.Context, data *dto.WSInteractionData) error {
 	if h.onInteraction == nil {
