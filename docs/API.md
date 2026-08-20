@@ -9,6 +9,7 @@
 | --- | --- | --- | --- |
 | `/api/v1/events` | POST | X-API-Key | 事件上报（统一事件系统入口） |
 | `/api/integration/qq/whitelist/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 查询白名单状态接口（全部历史记录） |
+| `/api/integration/qq/ban/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 封禁状态接口（网站/全球全部历史） |
 | `/health` | GET | 无 | 健康检查 |
 
 ## 1. GET /api/integration/qq/whitelist/status — QQ 查询白名单状态
@@ -52,7 +53,32 @@ curl -G http://127.0.0.1:3001/api/integration/qq/whitelist/status \\
 | `401` | 集成令牌缺失或无效 |
 | `500` | 数据库查询失败 |
 
-## 2. POST /api/v1/events — 事件上报
+## 2. GET /api/integration/qq/ban/status — QQ 查询封禁状态
+
+供 LumiBot 的 `/ban` 指令调用。请求需要使用 `X-QQ-Token` Header，也接受 `Authorization: Bearer <token>`。
+
+接口支持 SteamID64、SteamID2 和 Steam 个人主页 URL，返回网站封禁与全球封禁的全部本地历史记录。全球封禁数据读取 LumiAdmin 本地同步表，不在查询请求中直接访问 KZTimer Global API。
+
+```bash
+curl -G http://127.0.0.1:3001/api/integration/qq/ban/status \\
+  -H 'X-QQ-Token: integration-secret' \\
+  --data-urlencode 'steam_input=76561198012345678'
+```
+
+响应结构：
+
+```json
+{
+  "steamid64": "76561198012345678",
+  "steamid": "STEAM_0:1:12345",
+  "local_bans": [],
+  "global_bans": []
+}
+```
+
+`local_bans` 只包含网站自身封禁，排除 `source=global_ban`；`global_bans` 包含已过期历史记录，并返回 `notes`、`is_expired`、`manual_unbanned` 以及封禁/到期时间。LumiBot 会将 `notes` 作为原因，`stats` 仅作为截断后的简短附加信息展示。接口不返回操作人、IP 等敏感字段。
+
+## 3. POST /api/v1/events — 事件上报
 
 外部系统产生事件（举报、告警、服务器离线、管理操作等）时调用，
 事件经 Event Bus 分发到各订阅者（QQ 通知、日志等）。

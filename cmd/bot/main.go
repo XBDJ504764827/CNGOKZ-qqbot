@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tencent-connect/botgo"
+	"github.com/tencent-connect/botgo/dto"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
@@ -65,7 +66,13 @@ func main() {
 		nil,
 	)
 	whitelistCommand := command.NewWhitelistHandler(sender, lumiAdminClient, zapLogger)
-	receiver.OnCommand = whitelistCommand.Handle
+	banCommand := command.NewBanHandler(sender, lumiAdminClient, zapLogger)
+	receiver.OnCommand = func(ctx context.Context, msg *dto.Message) (bool, error) {
+		if handled, err := whitelistCommand.Handle(ctx, msg); handled || err != nil {
+			return handled, err
+		}
+		return banCommand.Handle(ctx, msg)
+	}
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）

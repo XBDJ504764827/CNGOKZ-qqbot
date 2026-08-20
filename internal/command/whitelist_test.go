@@ -105,7 +105,7 @@ func TestWhitelistHandler_RenderAllRecords(t *testing.T) {
 		},
 	}
 	text := RenderWhitelistStatus(result)
-	for _, want := range []string{"记录 1", "⏳ 待审核", "记录 2", "❌ 已拒绝", "原因：未填写拒绝原因", "记录 3", "⚠️ 已撤销", "时间：2026-08-05 12:00:00"} {
+	for _, want := range []string{"记录 1", "⏳ 待审核", "记录 2", "❌ 已拒绝", "原因：未填写拒绝原因", "记录 3", "⚠️ 已撤销", "时间：2026-08-05 20:00:00"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("rendered text = %q, missing %q", text, want)
 		}

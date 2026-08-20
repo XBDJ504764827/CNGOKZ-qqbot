@@ -41,7 +41,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
 │   │   ├── event.go           # QQ 事件注册（含群聊 / 私聊消息）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
-│   ├── command/               # QQ 指令（/wl 白名单状态查询）
+│   ├── command/               # QQ 指令处理（/wl、/ban）
 │   ├── lumiadmin/             # LumiAdmin HTTP 集成客户端
 │   ├── message/
 │   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
@@ -57,7 +57,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   └── api/                   # HTTP 服务：/health + /api/v1/events（认证→限流→处理）
 ├── pkg/sdk/                   # 对外 Go SDK 接口预留（LumiAdmin / LumiForum 等接入用）
 ├── configs/                   # 配置模板
-├── docs/                      # 架构 / CI / API / 通知文档
+├── docs/                      # 架构 / CI / API / 通知 / 指令文档
 └── README.md
 ```
 
@@ -94,8 +94,8 @@ main.go
 | `READY` | 网关连接就绪（打印 bot 信息） | `bot/handler.go OnReady` |
 | `MESSAGE_CREATE` | 频道消息（打印 user_id / channel_id / content） | `message/receiver.go` |
 | `AT_MESSAGE_CREATE` | 频道内 @机器人 消息 | `message/receiver.go` |
-| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/wl`） | `message/receiver.go` |
-| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（支持 `/wl`） | `message/receiver.go` |
+| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
+| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
 | ERROR_NOTIFY | 网关连接异常（内部回调，记录错误日志） | `bot/handler.go OnError` |
 | PLAIN | 未注册事件兑底（透传 debug 日志） | `bot/handler.go OnPlain` |
 
@@ -116,6 +116,18 @@ INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "z
 支持 SteamID64、SteamID2 和 Steam 个人主页 URL；帮助文案只宣传 SteamID64 / SteamID2。所有用户都可以查询。查询结果包含该 Steam 账号的全部白名单历史记录，并显示每条记录的状态和时间；拒绝记录会显示拒绝原因，缺少原因时显示“未填写拒绝原因”。未找到记录时显示“该玩家可能未申请白名单”。
 
 详细规则见 [docs/WHITELIST_COMMAND.md](docs/WHITELIST_COMMAND.md)。
+
+## QQ 指令：`/ban` 封禁信息查询
+
+用户可以使用：
+
+```text
+/ban <steamid64/steamid2>
+```
+
+指令会同时查询 LumiAdmin 中的网站封禁和全球封禁，显示全部两类历史记录的状态、原因、封禁时间和到期时间；时间统一按北京时间展示，每类最多显示最近 10 条。输入格式和 `/wl` 一致，也支持 Steam 个人主页 URL。
+
+详细规则见 [docs/BAN_COMMAND.md](docs/BAN_COMMAND.md)。
 
 ## 统一事件系统（事件通知中心）
 
@@ -210,7 +222,7 @@ systemctl enable --now lumibot
 
 | 阶段 | 内容 |
 | --- | --- |
-| 第三阶段 | ✅ 指令系统：已实现 `/wl` 白名单状态查询 |
+| 第三阶段 | ✅ 指令系统：已实现 `/wl` 白名单状态查询和 `/ban` 封禁信息查询 |
 | 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
 | 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |

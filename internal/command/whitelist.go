@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/tencent-connect/botgo/dto"
 	qqmessage "github.com/tencent-connect/botgo/dto/message"
@@ -150,11 +149,7 @@ func itemTimestamp(item lumiadmin.WhitelistRecord) string {
 }
 
 func formatTimestamp(raw string) string {
-	parsed, err := time.Parse(time.RFC3339Nano, raw)
-	if err != nil {
-		return raw
-	}
-	return parsed.Local().Format("2006-01-02 15:04:05")
+	return formatBeijingTimestamp(raw)
 }
 
 func (h *WhitelistHandler) reply(ctx context.Context, msg *dto.Message, content string) error {
