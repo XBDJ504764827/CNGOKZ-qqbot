@@ -26,4 +26,7 @@ func TestRegisterEvents_Intents(t *testing.T) {
 	if intents&dto.EventToIntent(dto.EventGroupAtMessageCreate) == 0 {
 		t.Error("intents missing GROUP_AT_MESSAGE_CREATE")
 	}
+	if intents&dto.EventToIntent(dto.EventGroupAtMessageCreate) == 0 {
+		t.Error("intents missing GROUP_AT_MESSAGE_CREATE")
+	}
 }

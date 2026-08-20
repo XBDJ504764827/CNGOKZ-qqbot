@@ -39,7 +39,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   ├── bot/
 │   │   ├── client.go          # Bot Client：openapi 工厂 + 生命周期
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
-│   │   ├── event.go           # QQ 事件注册（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
+│   │   ├── event.go           # QQ 事件注册（含群聊 / 私聊消息）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
 │   ├── command/               # QQ 指令处理（/bind、/wl、/ban）
 │   ├── message/
@@ -56,7 +56,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   └── api/                   # HTTP 服务：/health + /api/v1/events（认证→限流→处理）
 ├── pkg/sdk/                   # 对外 Go SDK 接口预留（LumiAdmin / LumiForum 等接入用）
 ├── configs/                   # 配置模板
-├── docs/                      # 架构 / CI / API / 通知文档
+├── docs/                      # 架构 / CI / API / 通知 / 指令文档
 └── README.md
 ```
 
@@ -79,7 +79,7 @@ main.go
   ↓
 创建 Bot Client（NewOpenAPI：沙箱/正式 + BOT_DEBUG）
   ↓
-注册事件 Handler（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE）
+注册事件 Handler（READY / MESSAGE_CREATE / AT_MESSAGE_CREATE / C2C / GROUP_AT）
   ↓
 连接 QQ Gateway（websocket 长连接，断线自动重连）
 ```
@@ -93,6 +93,8 @@ main.go
 | `READY` | 网关连接就绪（打印 bot 信息） | `bot/handler.go OnReady` |
 | `MESSAGE_CREATE` | 频道消息（打印 user_id / channel_id / content） | `message/receiver.go` |
 | `AT_MESSAGE_CREATE` | 频道内 @机器人 消息 | `message/receiver.go` |
+| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
+| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
 | ERROR_NOTIFY | 网关连接异常（内部回调，记录错误日志） | `bot/handler.go OnError` |
 | PLAIN | 未注册事件兑底（透传 debug 日志） | `bot/handler.go OnPlain` |
 
@@ -155,7 +157,7 @@ Event → 规则判断（rule）→ 模板渲染（template）→ 冷却防刷�
 ## 开发说明
 
 - **新增事件**：在 `internal/bot/event.go` 注册回调 → 在 `internal/bot/handler.go` 增加分发方法 → 在 `message` 层实现业务逻辑
-- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），未来供 LumiAdmin 通过 `POST /api/message/send` 调用
+- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），供通知和 `/wl` 指令回复使用
 - **错误处理**：统一返回 error 并记录日志，禁止 panic（除启动失败）；启动失败由 main 输出 FATAL 退出
 - **测试**：`go test ./...`（配置 / 事件注册 / 消息收发均有单测）
 
