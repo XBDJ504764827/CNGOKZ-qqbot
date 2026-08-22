@@ -73,10 +73,14 @@ feature/xxx
 
 ```bash
 # 构建（CI 通过后本地或构建机执行）
-CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o lumibot ./cmd/bot
+mkdir -p bin
+CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/lumibot ./cmd/bot
 
 # 部署到服务器
-scp lumibot user@server:/opt/lumibot/
+scp bin/lumibot user@server:/opt/lumibot/lumibot
+
+# 上线后重启服务（可选：确认部署成功）
+systemctl restart lumibot
 ```
 
 服务器上使用 **systemd** 管理服务生命周期：

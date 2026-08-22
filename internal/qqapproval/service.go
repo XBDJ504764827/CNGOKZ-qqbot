@@ -55,9 +55,10 @@ const (
 
 // pendingEntry 待填拒绝原因的一次挂起。
 type pendingEntry struct {
-	whitelistID string
-	nickname    string
-	expiresAt   time.Time
+	whitelistID   string
+	nickname      string
+	interactionID string // 按钮点击的 interaction_id，提交拒绝时作为 LumiAdmin 幂等键
+	expiresAt     time.Time
 }
 
 // Service 审批服务。
@@ -69,11 +70,10 @@ type Service struct {
 	token        string // LumiAdmin QQ Integration Token
 	http         *http.Client
 	stateMu      sync.Mutex
-	pending      map[string]*pendingEntry       // openid -> 待填拒绝原因
-	names        map[string]string              // whitelistID -> 玩家昵称（按钮点击时还原回复用）
-	authorized   map[string]map[string]struct{} // whitelistID -> allowed openids
-	interactions map[string]time.Time           // interactionID -> expireAt
-	inFlight     map[string]struct{}            // 正在回写的 whitelistID
+	pending      map[string]*pendingEntry // openid -> 待填拒绝原因
+	names        map[string]string        // whitelistID -> 玩家昵称（按钮点击时还原回复用）
+	interactions map[string]time.Time     // interactionID -> expireAt
+	inFlight     map[string]struct{}      // 正在回写的 whitelistID
 	reqTTL       time.Duration
 	logger       *zap.Logger
 }
@@ -111,7 +111,6 @@ func New(opts Options, logger *zap.Logger) (*Service, error) {
 		http:         httpClient,
 		pending:      make(map[string]*pendingEntry),
 		names:        make(map[string]string),
-		authorized:   make(map[string]map[string]struct{}),
 		interactions: make(map[string]time.Time),
 		inFlight:     make(map[string]struct{}),
 		reqTTL:       ttl,
@@ -126,26 +125,22 @@ func (s *Service) Enabled() bool {
 
 // reviewPayload 上报给 LumiAdmin 的审批请求体。
 type reviewPayload struct {
-	Action string `json:"action"`           // approve | reject
-	OpenID string `json:"openid"`           // 审批者 QQ openid
-	Reason string `json:"reason,omitempty"` // reject 时必填
-	Force  bool   `json:"force"`
+	Action        string `json:"action"`           // approve | reject
+	OpenID        string `json:"openid"`           // 审批者 QQ openid
+	InteractionID string `json:"interaction_id"`   // 按钮互动 ID，LumiAdmin 幂等键（必填）
+	Reason        string `json:"reason,omitempty"` // reject 时必填
+	Force         bool   `json:"force"`
 }
 
 // BuildKeyboard 为一条白名单申请构建「通过/拒绝」按钮。
-// whitelistID 用于回写时定位；allowOpenids 是本申请唯一允许审批的 QQ openid。
-// 同时登记 whitelistID -> nickname，供按钮点击时还原玩家昵称（QQ 的 button_data 承载不下昵称，
-// 且可能含 : 等字符，不能塞进按钮数据，故用服务内部映射按 whitelistID 找回）。
-func (s *Service) BuildKeyboard(whitelistID, nickname string, allowOpenids []string) *keyboard.CustomKeyboard {
+// whitelistID 用于回写时定位。同时登记 whitelistID -> nickname，供按钮点击时还原玩家昵称
+// （QQ 的 button_data 承载不下昵称，且可能含 : 等字符，不能塞进按钮数据，故用服务内部映射按
+// whitelistID 找回）。
+// 按钮点击时由 LumiAdmin 审批接口根据点击者的 openid 实时校验
+// （users 表绑定 + 启用状态 + 角色权限），因此不把通知收件人名单缓存为授权快照。
+func (s *Service) BuildKeyboard(whitelistID, nickname string) *keyboard.CustomKeyboard {
 	s.stateMu.Lock()
 	s.names[whitelistID] = nickname
-	allowed := make(map[string]struct{}, len(allowOpenids))
-	for _, openid := range allowOpenids {
-		if openid != "" {
-			allowed[openid] = struct{}{}
-		}
-	}
-	s.authorized[whitelistID] = allowed
 	s.stateMu.Unlock()
 	return &keyboard.CustomKeyboard{
 		Rows: []*keyboard.Row{
@@ -162,13 +157,16 @@ func (s *Service) BuildKeyboard(whitelistID, nickname string, allowOpenids []str
 }
 
 // BeginRejectReason 发起一次「等待拒绝原因」挂起。
-func (s *Service) BeginRejectReason(openid, whitelistID, nickname string) {
+// interactionID 为按钮点击的互动 ID，提交拒绝原因时作为 LumiAdmin 幂等键；
+// 无按钮上下文（如历史挂起）时可为空，提交时自动兜底生成。
+func (s *Service) BeginRejectReason(openid, whitelistID, nickname, interactionID string) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	s.pending[openid] = &pendingEntry{
-		whitelistID: whitelistID,
-		nickname:    nickname,
-		expiresAt:   time.Now().Add(s.reqTTL),
+		whitelistID:   whitelistID,
+		nickname:      nickname,
+		interactionID: interactionID,
+		expiresAt:     time.Now().Add(s.reqTTL),
 	}
 }
 
@@ -210,13 +208,6 @@ func (s *Service) takePending(openid string) *pendingEntry {
 		delete(s.pending, openid)
 	}
 	return e
-}
-
-func (s *Service) authorizedFor(whitelistID, openid string) bool {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	_, ok := s.authorized[whitelistID][openid]
-	return ok
 }
 
 // claimInteraction 返回 false 表示同一互动已在 TTL 内处理过。
@@ -266,13 +257,19 @@ func (s *Service) audit(event AuditEvent) {
 }
 
 // review 调用 LumiAdmin 审批接口。
-func (s *Service) review(ctx context.Context, whitelistID, action, openid, reason string, force bool) error {
+func (s *Service) review(ctx context.Context, whitelistID, action, openid, reason string, force bool, interactionID string) error {
+	// LumiAdmin 要求 interaction_id 非空（幂等键）。按钮上下文缺失时兜底生成，
+	// 避免请求被 400/422 拒绝。
+	if interactionID == "" {
+		interactionID = uuid.NewString()
+	}
 	u := fmt.Sprintf("%s/api/integration/qq/whitelist/%s/review", s.baseURL, url.PathEscape(whitelistID))
 	body, _ := json.Marshal(reviewPayload{
-		Action: action,
-		OpenID: openid,
-		Reason: reason,
-		Force:  force,
+		Action:        action,
+		OpenID:        openid,
+		InteractionID: interactionID,
+		Reason:        reason,
+		Force:         force,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
@@ -299,6 +296,13 @@ func (s *Service) review(ctx context.Context, whitelistID, action, openid, reaso
 			Message:         envelope.Error,
 		}
 	}
+	if resp.StatusCode == http.StatusForbidden {
+		// LumiAdmin 校验：openid 未绑定到有效管理员 / 无审批权限
+		return &ReviewError{
+			Forbidden: true,
+			Message:   envelope.Error,
+		}
+	}
 	if resp.StatusCode >= 300 || !envelope.OK {
 		msg := envelope.Error
 		if msg == "" {
@@ -312,19 +316,26 @@ func (s *Service) review(ctx context.Context, whitelistID, action, openid, reaso
 // ReviewError 审批结果错误。
 type ReviewError struct {
 	AlreadyReviewed bool
+	Forbidden       bool
 	Message         string
 }
 
 func (e *ReviewError) Error() string {
 	if e.Message == "" {
-		return "该申请已被他人审批，无法重复操作"
+		if e.AlreadyReviewed {
+			return "该申请已被他人审批，无法重复操作"
+		}
+		if e.Forbidden {
+			return "该 openid 未绑定到有效管理员，或无审批权限"
+		}
 	}
 	return e.Message
 }
 
 // Approve 处理「通过」点击：直接回写。成功返回 ""，否则返回错误。
-func (s *Service) Approve(ctx context.Context, whitelistID, openid string) error {
-	return s.review(ctx, whitelistID, "approve", openid, "", false)
+// interactionID 为按钮点击的互动 ID，作为 LumiAdmin 幂等键。
+func (s *Service) Approve(ctx context.Context, whitelistID, openid, interactionID string) error {
+	return s.review(ctx, whitelistID, "approve", openid, "", false, interactionID)
 }
 
 // SubmitRejectReason 提交「拒绝」的原因并回写。返回被拒玩家昵称（无挂起时为空）。
@@ -338,7 +349,7 @@ func (s *Service) SubmitRejectReason(ctx context.Context, openid, reason string)
 		return "", fmt.Errorf("拒绝原因不能为空")
 	}
 	if !s.beginReview(e.whitelistID) {
-		s.BeginRejectReason(openid, e.whitelistID, e.nickname)
+		s.BeginRejectReason(openid, e.whitelistID, e.nickname, e.interactionID)
 		return "", fmt.Errorf("该申请正在审批处理中")
 	}
 	defer s.endReview(e.whitelistID)
@@ -346,10 +357,10 @@ func (s *Service) SubmitRejectReason(ctx context.Context, openid, reason string)
 		Event: auditStarted, WhitelistID: e.whitelistID, Nickname: e.nickname, OpenID: openid,
 		Action: BtnReject, Reason: reason, Result: "started",
 	})
-	err := s.review(ctx, e.whitelistID, "reject", openid, reason, false)
+	err := s.review(ctx, e.whitelistID, "reject", openid, reason, false, e.interactionID)
 	if err != nil {
 		// 失败时恢复挂起，允许重试
-		s.BeginRejectReason(openid, e.whitelistID, e.nickname)
+		s.BeginRejectReason(openid, e.whitelistID, e.nickname, e.interactionID)
 		s.audit(AuditEvent{
 			Event: auditFailed, WhitelistID: e.whitelistID, Nickname: e.nickname, OpenID: openid,
 			Action: BtnReject, Reason: reason, Result: "failed", Error: err.Error(),
@@ -407,6 +418,11 @@ func (s *Service) HandleUserText(ctx context.Context, openid, content string) (b
 				"该申请已被其他管理员审批了，无需重复操作。")
 			return true, nil
 		}
+		if ok := errors.As(err, &re); ok && re.Forbidden {
+			_, _ = s.sender.SendC2CMessage(ctx, openid,
+				"你没有该白名单申请的审批权限（openid 未绑定管理员或无权限）。")
+			return true, nil
+		}
 		s.logger.Warn("QQ 审批：提交拒绝失败", zap.String("openid", openid), zap.Error(err))
 		_, _ = s.sender.SendC2CMessage(ctx, openid,
 			fmt.Sprintf("提交拒绝失败：%v\n请更换原因后再次发送。", err))
@@ -422,7 +438,8 @@ func (s *Service) HandleUserText(ctx context.Context, openid, content string) (b
 
 // DoAction 处理一次已解析的按钮点击（action + whitelistID），并向申请人发送结果回复。
 // nickname 为申请玩家昵称（用于提示），为空时按 whitelistID 从登记映射找回。
-func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nickname string) error {
+// interactionID 为按钮点击的互动 ID，随审批请求上报 LumiAdmin 作为幂等键。
+func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nickname, interactionID string) error {
 	if nickname == "" {
 		nickname = s.nameFor(whitelistID)
 	}
@@ -432,7 +449,7 @@ func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nic
 			Event: auditStarted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
 			Action: action, Result: "started",
 		})
-		err := s.Approve(ctx, whitelistID, openid)
+		err := s.Approve(ctx, whitelistID, openid, interactionID)
 		if err == nil {
 			s.audit(AuditEvent{
 				Event: auditCompleted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
@@ -452,6 +469,16 @@ func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nic
 				"该申请已被其他管理员审批了，无需重复操作。")
 			return nil
 		}
+		if ok := errors.As(err, &re); ok && re.Forbidden {
+			s.audit(AuditEvent{
+				Event: auditRejected, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
+				Action: action, Result: "unauthorized", Error: err.Error(),
+			})
+			s.logger.Warn("QQ 审批：无审批权限", zap.String("whitelist_id", whitelistID), zap.String("openid", openid), zap.Error(err))
+			_, _ = s.sender.SendC2CMessage(ctx, openid,
+				"你没有该白名单申请的审批权限（openid 未绑定管理员或无权限）。")
+			return nil
+		}
 		s.logger.Warn("QQ 审批：通过失败", zap.String("whitelist_id", whitelistID), zap.Error(err))
 		s.audit(AuditEvent{
 			Event: auditFailed, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
@@ -461,7 +488,7 @@ func (s *Service) DoAction(ctx context.Context, openid, action, whitelistID, nic
 			fmt.Sprintf("操作失败：%v", err))
 	case BtnReject:
 		// 进入「等待拒绝原因」状态，反问原因
-		s.BeginRejectReason(openid, whitelistID, nickname)
+		s.BeginRejectReason(openid, whitelistID, nickname, interactionID)
 		s.audit(AuditEvent{
 			Event: auditStarted, WhitelistID: whitelistID, Nickname: nickname, OpenID: openid,
 			Action: action, Result: "awaiting_reason",

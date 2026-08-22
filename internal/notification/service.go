@@ -31,7 +31,7 @@ type KeyboardSender interface {
 // 以接口注入，避免通知系统反向依赖审批实现。
 type ButtonProvider interface {
 	Enabled() bool
-	BuildKeyboard(whitelistID, nickname string, allowOpenids []string) *keyboard.CustomKeyboard
+	BuildKeyboard(whitelistID, nickname string) *keyboard.CustomKeyboard
 }
 
 // Service 通知服务：事件 → 规则 → 模板 → 冷却 → QQ 发送。
@@ -203,7 +203,7 @@ func (s *Service) send(ctx context.Context, ev event.Event, n Notification) (str
 		nickname, _ := ev.Data["nickname"].(string)
 		for _, target := range targets {
 			if useButtons {
-				if _, err := s.keyboard.SendC2CMessageWithKeyboard(ctx, target, n.Content, s.buttons.BuildKeyboard(whitelistID, nickname, targets)); err != nil {
+				if _, err := s.keyboard.SendC2CMessageWithKeyboard(ctx, target, n.Content, s.buttons.BuildKeyboard(whitelistID, nickname)); err != nil {
 					return "failed", err
 				}
 			} else {
