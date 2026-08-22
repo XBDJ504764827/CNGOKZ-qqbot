@@ -33,17 +33,8 @@ func (s *Service) HandleInteraction(ctx context.Context, data *dto.WSInteraction
 				zap.String("interaction_id", data.ID), zap.Error(err))
 		}
 	}
-	if !s.authorizedFor(whitelistID, openid) {
-		s.audit(AuditEvent{
-			Event: auditRejected, WhitelistID: whitelistID, InteractionID: data.ID,
-			Nickname: s.nameFor(whitelistID), OpenID: openid, Action: action, Result: "unauthorized",
-		})
-		s.logger.Warn("QQ 审批：未授权按钮点击",
-			zap.String("interaction_id", data.ID), zap.String("openid", openid),
-			zap.String("action", action), zap.String("whitelist_id", whitelistID))
-		_, _ = s.sender.SendC2CMessage(ctx, openid, "你没有该白名单申请的审批权限。")
-		return nil
-	}
+	// 授权判定交由 LumiAdmin 兜底：按 openid 查 users 表（绑定且启用、角色可审批）
+	// 实时校验，不再依赖本机内存快照，避免 bot 重启后旧按钮失效。
 	if !s.claimInteraction(data.ID) {
 		s.audit(AuditEvent{
 			Event: auditDuplicated, WhitelistID: whitelistID, InteractionID: data.ID,
@@ -63,7 +54,7 @@ func (s *Service) HandleInteraction(ctx context.Context, data *dto.WSInteraction
 		}
 		defer s.endReview(whitelistID)
 	}
-	return s.DoAction(ctx, openid, action, whitelistID, nickname)
+	return s.DoAction(ctx, openid, action, whitelistID, nickname, data.ID)
 }
 
 // parseInteraction 从互动事件提取 (openid, action, whitelistID, nickname)。

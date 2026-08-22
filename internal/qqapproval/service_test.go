@@ -104,7 +104,7 @@ func bootServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 func TestBuildKeyboard(t *testing.T) {
 	f := &fakeSender{}
 	s, _ := New(Options{Sender: f}, zap.NewNop())
-	kb := s.BuildKeyboard("wl-123", "张三", nil)
+	kb := s.BuildKeyboard("wl-123", "张三")
 	if kb == nil || len(kb.Rows) == 0 || len(kb.Rows[0].Buttons) != 2 {
 		t.Fatalf("expected 2 buttons, got %+v", kb)
 	}
@@ -155,7 +155,7 @@ func TestHandleInteractionAcknowledgesButtonClick(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	s.BuildKeyboard("wl-1", "张三", []string{"openid-1"})
+	s.BuildKeyboard("wl-1", "张三")
 
 	interaction := &dto.WSInteractionData{
 		ID:         "interaction-1",
@@ -177,13 +177,18 @@ func TestHandleInteractionAcknowledgesButtonClick(t *testing.T) {
 }
 
 func TestHandleInteractionRejectsUnauthorizedUser(t *testing.T) {
+	// LumiAdmin 返回 403（openid 未绑定管理员 / 无审批权限）时，bot 应转友好提示并审计 unauthorized
+	srv := bootServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"该 openid 未绑定到有效管理员，或管理员已被禁用"}`))
+	})
 	f := &fakeSender{}
 	audit := &fakeAuditor{}
-	s, err := New(Options{Sender: f, Auditor: audit}, zap.NewNop())
+	s, err := New(Options{Sender: f, Auditor: audit, BaseURL: srv.URL, Token: "test-token"}, zap.NewNop())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	s.BuildKeyboard("wl-1", "张三", []string{"authorized-openid"})
+	s.BuildKeyboard("wl-1", "张三")
 
 	err = s.HandleInteraction(context.Background(), &dto.WSInteractionData{
 		ID: "interaction-1", UserOpenID: "unauthorized-openid",
@@ -200,6 +205,39 @@ func TestHandleInteractionRejectsUnauthorizedUser(t *testing.T) {
 	}
 }
 
+func TestHandleInteractionUsesBackendAuthorizationForAnyBoundAdmin(t *testing.T) {
+	var gotOpenID string
+	srv := bootServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload reviewPayload
+		if err := jsonDecode(r, &payload); err != nil {
+			t.Fatalf("decode review payload: %v", err)
+		}
+		gotOpenID = payload.OpenID
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	f := &fakeSender{}
+	s := newTestSvc(f, srv)
+
+	// 模拟按钮消息的通知名单没有包含该管理员：审批权限由 LumiAdmin
+	// 按 openid 实时校验，不能依赖 LumiBot 发送通知时的本地快照。
+	s.BuildKeyboard("wl-1", "张三")
+	err := s.HandleInteraction(context.Background(), &dto.WSInteractionData{
+		ID:         "interaction-admin",
+		UserOpenID: "system-admin-openid",
+		Data:       &dto.InteractionData{Resolved: json.RawMessage(`{"button_data":"approve:wl-1"}`)},
+	})
+	if err != nil {
+		t.Fatalf("HandleInteraction() error = %v", err)
+	}
+	if gotOpenID != "system-admin-openid" {
+		t.Fatalf("review openid = %q, want system-admin-openid", gotOpenID)
+	}
+	if !strings.Contains(lastMSG(f), "已通过") {
+		t.Fatalf("reply missing approval result: %q", lastMSG(f))
+	}
+}
+
 func TestHandleInteractionDeduplicatesInteractionID(t *testing.T) {
 	f := &fakeSender{}
 	audit := &fakeAuditor{}
@@ -207,7 +245,7 @@ func TestHandleInteractionDeduplicatesInteractionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	s.BuildKeyboard("wl-1", "张三", []string{"openid-1"})
+	s.BuildKeyboard("wl-1", "张三")
 	interaction := &dto.WSInteractionData{
 		ID: "interaction-1", UserOpenID: "openid-1",
 		Data: &dto.InteractionData{Resolved: json.RawMessage(`{"button_data":"reject:wl-1"}`)},
@@ -256,12 +294,12 @@ func TestApproveReplyRestoresNicknameFromRegistration(t *testing.T) {
 	s := newTestSvc(f, srv)
 
 	// 发送通知时登记了玩家昵称（BuildKeyboard 内部按 whitelistID 保存）
-	kb := s.BuildKeyboard("wl-123", "张三", []string{"openid-1"})
+	kb := s.BuildKeyboard("wl-123", "张三")
 	if kb == nil {
 		t.Fatal("expected keyboard")
 	}
 	// 按钮点击回调里拿不到昵称（parseInteraction 恒返回空），只传 whitelistID
-	err := s.DoAction(context.Background(), "openid-1", "approve", "wl-123", "")
+	err := s.DoAction(context.Background(), "openid-1", "approve", "wl-123", "", "interaction-1")
 	if err != nil {
 		t.Fatalf("DoAction error = %v", err)
 	}
@@ -270,7 +308,7 @@ func TestApproveReplyRestoresNicknameFromRegistration(t *testing.T) {
 	}
 
 	// 拒绝侧：同样能还原昵称到反问话术与提交结果
-	if err := s.DoAction(context.Background(), "openid-2", "reject", "wl-123", ""); err != nil {
+	if err := s.DoAction(context.Background(), "openid-2", "reject", "wl-123", "", "interaction-2"); err != nil {
 		t.Fatalf("DoAction reject error = %v", err)
 	}
 	if !strings.Contains(lastMSG(f), "玩家「张三」") {
@@ -287,7 +325,7 @@ func TestApproveReplyRestoresNicknameFromRegistration(t *testing.T) {
 func TestApproveSendsReviewAndReplies(t *testing.T) {
 	var mu sync.Mutex
 	var gotPath string
-	var gotAction, gotOpenid string
+	var gotAction, gotOpenid, gotInteractionID string
 	srv := bootServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload reviewPayload
 		_ = jsonDecode(r, &payload)
@@ -295,6 +333,7 @@ func TestApproveSendsReviewAndReplies(t *testing.T) {
 		gotPath = r.URL.Path
 		gotAction = payload.Action
 		gotOpenid = payload.OpenID
+		gotInteractionID = payload.InteractionID
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true,"item":{}}`))
@@ -302,7 +341,7 @@ func TestApproveSendsReviewAndReplies(t *testing.T) {
 
 	f := &fakeSender{}
 	s := newTestSvc(f, srv)
-	err := s.DoAction(context.Background(), "openid-1", "approve", "wl-1", "张三")
+	err := s.DoAction(context.Background(), "openid-1", "approve", "wl-1", "张三", "interaction-1")
 	if err != nil {
 		t.Fatalf("DoAction approve error = %v", err)
 	}
@@ -314,6 +353,9 @@ func TestApproveSendsReviewAndReplies(t *testing.T) {
 	}
 	if gotAction != "approve" || gotOpenid != "openid-1" {
 		t.Errorf("body action=%q openid=%q", gotAction, gotOpenid)
+	}
+	if gotInteractionID != "interaction-1" {
+		t.Errorf("body interaction_id=%q, want %q", gotInteractionID, "interaction-1")
 	}
 	if !strings.Contains(lastMSG(f), "已通过") {
 		t.Errorf("reply missing 已通过: %q", lastMSG(f))
@@ -329,7 +371,7 @@ func TestRejectRequiresReasonFlow(t *testing.T) {
 	s := newTestSvc(f, srv)
 
 	// 点击拒绝 → 进入挂起并反问原因
-	if err := s.DoAction(context.Background(), "openid-1", "reject", "wl-1", "张三"); err != nil {
+	if err := s.DoAction(context.Background(), "openid-1", "reject", "wl-1", "张三", "interaction-9"); err != nil {
 		t.Fatalf("DoAction reject error = %v", err)
 	}
 	if !s.PeekPending("openid-1") {
@@ -363,7 +405,7 @@ func TestConcurrentReviewReturnsAlreadyReviewed(t *testing.T) {
 	f := &fakeSender{}
 	s := newTestSvc(f, srv)
 
-	err := s.DoAction(context.Background(), "openid-2", "approve", "wl-1", "李四")
+	err := s.DoAction(context.Background(), "openid-2", "approve", "wl-1", "李四", "interaction-2")
 	if err != nil {
 		t.Fatalf("DoAction should handle already-reviewed internally, got %v", err)
 	}
@@ -381,11 +423,41 @@ func TestDoActionRejectWhileSomeoneAlreadyApproved(t *testing.T) {
 	})
 	f := &fakeSender{}
 	s := newTestSvc(f, srv)
-	if err := s.DoAction(context.Background(), "openid-3", "reject", "wl-2", "王五"); err != nil {
+	if err := s.DoAction(context.Background(), "openid-3", "reject", "wl-2", "王五", "interaction-3"); err != nil {
 		t.Fatalf("reject start error = %v", err)
 	}
 	if !s.PeekPending("openid-3") {
 		t.Fatal("reject should be pending")
+	}
+}
+
+// TestRejectCarriesInteractionID 拒绝原因提交时，应带上按钮点击时的 interaction_id（LumiAdmin 幂等键）。
+func TestRejectCarriesInteractionID(t *testing.T) {
+	var mu sync.Mutex
+	var gotInteractionID string
+	srv := bootServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload reviewPayload
+		_ = jsonDecode(r, &payload)
+		mu.Lock()
+		gotInteractionID = payload.InteractionID
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true,"item":{}}`))
+	})
+	f := &fakeSender{}
+	s := newTestSvc(f, srv)
+
+	if err := s.DoAction(context.Background(), "openid-1", "reject", "wl-1", "张三", "interaction-9"); err != nil {
+		t.Fatalf("DoAction reject error = %v", err)
+	}
+	if _, err := s.HandleUserText(context.Background(), "openid-1", "外挂作弊"); err != nil {
+		t.Fatalf("HandleUserText error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotInteractionID != "interaction-9" {
+		t.Errorf("reject body interaction_id=%q, want %q", gotInteractionID, "interaction-9")
 	}
 }
 
