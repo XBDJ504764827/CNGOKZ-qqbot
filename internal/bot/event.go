@@ -12,15 +12,15 @@ import (
 // RegisterEvents 注册 QQ 网关事件回调，返回 websocket 鉴权所需的 intent 集合。
 //
 // 当前支持的事件（每个事件独立 Handler，统一分发到 *Handler）：
-//   - READY                网关连接就绪
-//   - MESSAGE_CREATE       频道消息
-//   - AT_MESSAGE_CREATE    频道内 @机器人 消息
-//   - C2C_MESSAGE_CREATE   私聊消息（用于获取用户 openid / 绑定）
-//   - GROUP_AT_MESSAGE_CREATE 群聊消息（群内 /wl 指令）
-//   - ERROR_NOTIFY         网关连接异常（SDK 内部回调）
-//   - PLAIN                未注册事件兜底（透传日志）
+//   - READY                 网关连接就绪
+//   - MESSAGE_CREATE        频道消息
+//   - AT_MESSAGE_CREATE     频道内 @机器人 消息
+//   - C2C_MESSAGE_CREATE    私聊消息（用于获取用户 openid / 绑定）
+//   - GROUP_AT_MESSAGE_CREATE 群聊消息
+//   - ERROR_NOTIFY          网关连接异常（SDK 内部回调）
+//   - PLAIN                 未注册事件兜底（透传日志）
 //
-// 后续阶段新增事件（群@消息、论坛、服务器状态等）在此集中注册。
+// 注意：不再注册 INTERACTION_CREATE 事件——QQ 仅作通知渠道，无按钮交互。
 func RegisterEvents(h *Handler, logger *zap.Logger) dto.Intent {
 	return websocket.RegisterHandlers(
 		readyHandler(h),
@@ -29,7 +29,6 @@ func RegisterEvents(h *Handler, logger *zap.Logger) dto.Intent {
 		atMessageHandler(h, logger),
 		c2cMessageHandler(h, logger),
 		groupATMessageHandler(h, logger),
-		interactionHandler(h, logger),
 		plainHandler(h),
 	)
 }
@@ -89,17 +88,6 @@ func groupATMessageHandler(h *Handler, logger *zap.Logger) event.GroupATMessageE
 	return func(_ *dto.WSPayload, data *dto.WSGroupATMessageData) error {
 		if err := h.OnGroupMessage(context.Background(), (*dto.Message)(data)); err != nil {
 			logger.Warn("处理 GROUP_AT_MESSAGE_CREATE 事件失败", zap.Error(err))
-		}
-		return nil
-	}
-}
-
-// interactionHandler INTERACTION_CREATE 事件：消息按钮点击等互动。
-// 用于 QQ 聊天审批白名单（通过/拒绝按钮）。
-func interactionHandler(h *Handler, logger *zap.Logger) event.InteractionEventHandler {
-	return func(_ *dto.WSPayload, data *dto.WSInteractionData) error {
-		if err := h.OnInteraction(context.Background(), data); err != nil {
-			logger.Warn("处理 INTERACTION_CREATE 事件失败", zap.Error(err))
 		}
 		return nil
 	}

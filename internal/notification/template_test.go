@@ -53,7 +53,8 @@ func TestRender_AllEventTypes(t *testing.T) {
 		{event.EventSystemWarning, "系统警告", "[系统警告]"},
 		{event.EventForumReportCreated, "论坛举报", "[论坛举报]"},
 		{event.EventAdminAction, "管理操作", "[管理操作]"},
-		{event.EventWhitelistRequestCreated, "新白名单申请", "[新白名单申请]"},
+		{event.EventWhitelistRequestCreated, "新白名单申请", "📩 白名单申请"},
+		{event.EventWhitelistAutoApproved, "白名单自动通过", "[白名单自动通过]"},
 	}
 	for _, tc := range cases {
 		ev := testEvent(tc.eventType, "t", "m", map[string]interface{}{"server": "KZ-01"})
@@ -67,24 +68,17 @@ func TestRender_AllEventTypes(t *testing.T) {
 	}
 }
 
-// TestRender_WhitelistRequest 验证白名单申请模板渲染（联调用例）。
+// TestRender_WhitelistRequest 验证白名单申请模板渲染（联调用例 - 用户指定格式）。
 func TestRender_WhitelistRequest(t *testing.T) {
 	tmpl := NewTemplates()
 	ev := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "玩家 张三 提交了白名单申请，等待审核", map[string]interface{}{
-		"nickname":    "张三",
-		"steamid64":   "76561198000000001",
-		"contact":     "QQ 12345",
-		"steam_level": 42,
-		"ratings": map[string]interface{}{
-			"kzt": 1560.5,
-			"skz": 1300.0,
-			"vnl": nil,
-			"ovr": 1400.25,
-		},
-		"has_local_ban":  false,
-		"has_global_ban": true,
-		"has_active_ban": false,
-		"profile_url":    "https://steamcommunity.com/profiles/76561198000000001",
+		"nickname_show":     "张三",
+		"steamid64":         "76561198000000001",
+		"risk_display":      "🔴 高风险",
+		"ban_flags":         "❌ 全球封禁",
+		"ban_reason":        "bhop_hack",
+		"auto_approve_text": "风险玩家等待管理员进行手动审核",
+		"detail_url":        "https://admin.example.com/whitelist",
 	})
 
 	title, content := tmpl.Render(ev)
@@ -92,12 +86,16 @@ func TestRender_WhitelistRequest(t *testing.T) {
 		t.Errorf("title = %q, want 新白名单申请", title)
 	}
 	for _, want := range []string{
-		"[新白名单申请]", "玩家: 张三", "SteamID: 76561198000000001", "联系方式: QQ 12345",
-		"Steam等级: 42",
-		"KZT rating: 1560.5", "SKZ rating: 1300", "VNL rating: -", "OVR rating: 1400.25",
-		"本地封禁: 否", "全球封禁: 是", "未解封: 否",
-		"Steam地址: https://steamcommunity.com/profiles/76561198000000001",
-		"请管理员审核。",
+		"📩 白名单申请",
+		"👤 张三",
+		"🆔 76561198000000001",
+		"风险：🔴 高风险",
+		"封禁：❌ 全球封禁",
+		"违规：",
+		"bhop_hack",
+		"自动审核：风险玩家等待管理员进行手动审核",
+		"时间：",
+		"🔗 点击查看详情：https://admin.example.com/whitelist",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("content missing %q:\n%s", want, content)
@@ -105,35 +103,85 @@ func TestRender_WhitelistRequest(t *testing.T) {
 	}
 }
 
-// TestRender_WhitelistBanDetails 验证白名单模板在存在封禁详情时渲染原因。
-func TestRender_WhitelistBanDetails(t *testing.T) {
+// TestRender_WhitelistRequest_NoBanReason 验证无封禁原因时隐藏原因区块。
+func TestRender_WhitelistRequest_NoBanReason(t *testing.T) {
 	tmpl := NewTemplates()
-	ev := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "m", map[string]interface{}{
-		"steamid64":         "76561198000000001",
-		"has_local_ban":     true,
-		"local_ban_reason":  "外挂作弊",
-		"has_global_ban":    false,
-		"has_active_ban":    true,
-		"active_ban_reason": "辱骂他人",
+	ev := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "", map[string]interface{}{
+		"nickname_show":     "李四",
+		"steamid64":         "76561198000000002",
+		"risk_display":      "🟢 低风险",
+		"ban_flags":         "无",
+		"ban_reason":        "-",
+		"auto_approve_text": "3小时",
+		"detail_url":        "",
 	})
 
 	_, content := tmpl.Render(ev)
-	for _, want := range []string{"本地封禁: 是", "本地封禁原因: 外挂作弊", "未解封: 是", "当前封禁原因: 辱骂他人"} {
+	if strings.Contains(content, "违规：") {
+		t.Errorf("无封禁原因时不应显示违规区块:\n%s", content)
+	}
+	if !strings.Contains(content, "封禁：无") {
+		t.Errorf("content missing 封禁：无:\n%s", content)
+	}
+}
+
+// TestRender_WhitelistAutoApproved 验证低风险自动通过事件模板渲染。
+func TestRender_WhitelistAutoApproved(t *testing.T) {
+	tmpl := NewTemplates()
+	ev := testEvent(event.EventWhitelistAutoApproved, "白名单自动通过", "玩家 张三 的低风险白名单申请已自动通过", map[string]interface{}{
+		"nickname":  "张三",
+		"steamid64": "76561198000000001",
+		"hours":     3,
+	})
+
+	title, content := tmpl.Render(ev)
+	if title != "白名单自动通过" {
+		t.Errorf("title = %q, want 白名单自动通过", title)
+	}
+	for _, want := range []string{
+		"[白名单自动通过]", "玩家: 张三", "SteamID: 76561198000000001",
+		"申请满 3 小时无人审核", "系统已自动通过",
+	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("content missing %q:\n%s", want, content)
 		}
 	}
-	// 无原因时不应输出“原因”占位行
+}
+
+// TestRender_WhitelistBanDetails 验证白名单模板在存在封禁详情时渲染违规原因。
+func TestRender_WhitelistBanDetails(t *testing.T) {
+	tmpl := NewTemplates()
+	ev := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "m", map[string]interface{}{
+		"nickname_show":     "张三",
+		"steamid64":         "76561198000000001",
+		"risk_display":      "🔴 高风险",
+		"ban_flags":         "❌ 全球封禁 / 未解封",
+		"ban_reason":        "bhop_hack",
+		"auto_approve_text": "风险玩家等待管理员进行手动审核",
+	})
+
+	_, content := tmpl.Render(ev)
+	for _, want := range []string{
+		"封禁：❌ 全球封禁 / 未解封",
+		"违规：",
+		"bhop_hack",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("content missing %q:\n%s", want, content)
+		}
+	}
+	// 无原因时不应输出原因区块
 	ev2 := testEvent(event.EventWhitelistRequestCreated, "新白名单申请", "m", map[string]interface{}{
-		"steamid64":      "76561198000000002",
-		"has_local_ban":  false,
-		"has_global_ban": false,
+		"nickname_show":     "李四",
+		"steamid64":         "76561198000000002",
+		"risk_display":      "🟢 低风险",
+		"ban_flags":         "无",
+		"ban_reason":        "-",
+		"auto_approve_text": "3小时",
 	})
 	_, content2 := tmpl.Render(ev2)
-	for _, notWant := range []string{"本地封禁原因: -", "当前封禁原因: -"} {
-		if strings.Contains(content2, notWant) {
-			t.Errorf("content should not contain %q:\n%s", notWant, content2)
-		}
+	if strings.Contains(content2, "违规：") {
+		t.Errorf("无封禁原因时不应显示原因区块:\n%s", content2)
 	}
 }
 
