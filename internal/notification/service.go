@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/tencent-connect/botgo/dto"
-	"github.com/tencent-connect/botgo/dto/keyboard"
 	"go.uber.org/zap"
 
 	"github.com/XBDJ504764827/LumiBot/internal/config"
@@ -22,26 +21,13 @@ type QQMessageSender interface {
 	SendChannelMessage(ctx context.Context, channelID, content string) (*dto.Message, error)
 }
 
-// KeyboardSender 支持附带按钮键盘的私聊发送（可选能力，实现于 message.Sender）。
-type KeyboardSender interface {
-	SendC2CMessageWithKeyboard(ctx context.Context, userID, content string, buttons *keyboard.CustomKeyboard) (*dto.Message, error)
-}
-
-// ButtonProvider 为白名单申请事件提供「通过/拒绝」按钮（实现于 qqapproval.Service）。
-// 以接口注入，避免通知系统反向依赖审批实现。
-type ButtonProvider interface {
-	Enabled() bool
-	BuildKeyboard(whitelistID, nickname string) *keyboard.CustomKeyboard
-}
-
 // Service 通知服务：事件 → 规则 → 模板 → 冷却 → QQ 发送。
 //
 // 实现 event.Handler 接口，通过 Bus.Subscribe 注册。
+// QQ 仅作为通知渠道（纯文本），不附带任何交互按钮、不触发审批流程。
 type Service struct {
 	logger    *zap.Logger
 	sender    QQMessageSender
-	keyboard  KeyboardSender
-	buttons   ButtonProvider
 	rules     *rule.Rules
 	templates *Templates
 	cooldown  Cooldown
@@ -53,22 +39,9 @@ type Service struct {
 
 // NewService 构建通知服务（依赖注入：配置、发送器、日志）。
 func NewService(cfg config.NotificationConfig, sender QQMessageSender, logger *zap.Logger) *Service {
-	return newService(cfg, sender, nil, nil, logger)
-}
-
-// NewServiceWithButtons 构建通知服务，附带白名单审批按钮提供者与键盘发送能力。
-// sender 需同时实现 KeyboardSender 才能发送带按钮消息。
-func NewServiceWithButtons(cfg config.NotificationConfig, sender QQMessageSender, buttons ButtonProvider, logger *zap.Logger) *Service {
-	kb, _ := sender.(KeyboardSender)
-	return newService(cfg, sender, kb, buttons, logger)
-}
-
-func newService(cfg config.NotificationConfig, sender QQMessageSender, kb KeyboardSender, buttons ButtonProvider, logger *zap.Logger) *Service {
 	return &Service{
 		logger:        logger,
 		sender:        sender,
-		keyboard:      kb,
-		buttons:       buttons,
 		rules:         rule.New(cfg.Cooldown),
 		templates:     NewTemplates(),
 		cooldown:      NewMemoryCooldown(),
@@ -84,7 +57,7 @@ func newService(cfg config.NotificationConfig, sender QQMessageSender, kb Keyboa
 //  2. 规则判断（internal/rule）
 //  3. 冷却防刷（重复事件窗口内只发一次）
 //  4. 模板渲染（template.go）
-//  5. 发送（QQMessageSender）并记录通知日志
+//  5. 纯文本发送（QQMessageSender）并记录通知日志
 func (s *Service) HandleEvent(ctx context.Context, ev event.Event) error {
 	// 1. 开关
 	if !s.enable {
@@ -186,6 +159,7 @@ func (s *Service) resolvePrivateTargets(ev event.Event) []string {
 
 // send 按渠道发送通知，返回发送状态（sent / skipped）与错误。
 // 私聊渠道支持多个目标：events data.openids 列表逐个发送；缺省时发默认管理员。
+// 通知为纯文本，不附带按钮键盘，保证 QQ 内用户无需（且无法）进行任何操作。
 func (s *Service) send(ctx context.Context, ev event.Event, n Notification) (string, error) {
 	switch n.Channel {
 	case ChannelQQPrivate:
@@ -193,23 +167,9 @@ func (s *Service) send(ctx context.Context, ev event.Event, n Notification) (str
 		if len(targets) == 0 {
 			return "skipped", fmt.Errorf("未配置 QQ_PRIVATE 通知目标（NOTIFY_PRIVATE_TARGET 或 data.openids）")
 		}
-		// 白名单申请：附加「通过/拒绝」按钮（需启用审批回写且 sender 支持键盘）
-		useButtons := ev.EventType == event.EventWhitelistRequestCreated &&
-			s.buttons != nil && s.buttons.Enabled() && s.keyboard != nil
-		whitelistID, _ := ev.Data["whitelist_id"].(string)
-		if useButtons && whitelistID == "" {
-			useButtons = false
-		}
-		nickname, _ := ev.Data["nickname"].(string)
 		for _, target := range targets {
-			if useButtons {
-				if _, err := s.keyboard.SendC2CMessageWithKeyboard(ctx, target, n.Content, s.buttons.BuildKeyboard(whitelistID, nickname)); err != nil {
-					return "failed", err
-				}
-			} else {
-				if _, err := s.sender.SendC2CMessage(ctx, target, n.Content); err != nil {
-					return "failed", err
-				}
+			if _, err := s.sender.SendC2CMessage(ctx, target, n.Content); err != nil {
+				return "failed", err
 			}
 		}
 	case ChannelQQChannel:

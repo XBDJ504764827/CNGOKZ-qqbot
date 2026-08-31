@@ -91,30 +91,22 @@ main.go
 | 事件 | 说明 | 处理位置 |
 | --- | --- | --- |
 | `READY` | 网关连接就绪（打印 bot 信息） | `bot/handler.go OnReady` |
-| `MESSAGE_CREATE` | 频道消息（打印 user_id / channel_id / content） | `message/receiver.go` |
-| `AT_MESSAGE_CREATE` | 频道内 @机器人 消息 | `message/receiver.go` |
-| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
-| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（支持 `/wl`、`/ban`） | `message/receiver.go` |
+| `MESSAGE_CREATE` | 频道消息（仅记录日志） | `message/receiver.go` |
+| `AT_MESSAGE_CREATE` | 频道内 @机器人 消息（仅记录日志） | `message/receiver.go` |
+| `C2C_MESSAGE_CREATE` | QQ 私聊消息（仅记录日志） | `message/receiver.go` |
+| `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（仅记录日志） | `message/receiver.go` |
 | ERROR_NOTIFY | 网关连接异常（内部回调，记录错误日志） | `bot/handler.go OnError` |
 | PLAIN | 未注册事件兑底（透传 debug 日志） | `bot/handler.go OnPlain` |
+
+## 通知定位（QQ 仅作通知渠道）
+
+LumiBot 是纯通知机器人：事件触发后向管理员 QQ 推送纯文本通知，**不提供任何交互操作**（无按钮审批、无指令系统）。所有审批与业务操作均在 LumiAdmin 后台完成。
 
 收到消息时日志示例：
 
 ```
 INFO  message received  {"user_id": "xxxx", "guild_id": "yyyy", "channel_id": "zzzz", "content": "hello"}
 ```
-
-## QQ 指令：`/bind` 获取 QQ OpenID
-
-用户在 QQ 私聊机器人发送：
-
-```text
-/bind
-```
-
-机器人会回复当前私聊用户的 QQ OpenID，用户可复制到 LumiAdmin“编辑管理员信息”的“通知openid”字段，用于接收 QQ 机器人通知。该指令只支持私聊，每位用户每分钟最多 5 次，审计记录写入独立的 `QQ_COMMAND_AUDIT_PATH` 文件。
-
-详细规则见 [docs/BIND_COMMAND.md](docs/BIND_COMMAND.md)。
 
 ## 统一事件系统（事件通知中心）
 
@@ -149,15 +141,15 @@ Notification Handler（internal/notification：当前记录日志，未来发 QQ
 Event → 规则判断（rule）→ 模板渲染（template）→ 冷却防刷（cooldown）→ QQ 发送（message.Sender）
 ```
 
-- **支持事件**：`SERVER_OFFLINE` / `SERVER_ONLINE` / `SYSTEM_WARNING` / `FORUM_REPORT_CREATED`（`ADMIN_ACTION` 默认关闭）
+- **支持事件**：`SERVER_OFFLINE` / `SERVER_ONLINE` / `SYSTEM_WARNING` / `FORUM_REPORT_CREATED` / `WHITELIST_REQUEST_CREATED` / `WHITELIST_AUTO_APPROVED`（`ADMIN_ACTION` 默认关闭）
 - **通知渠道**：`QQ_PRIVATE`（管理员私聊，需配置 `NOTIFY_PRIVATE_TARGET`）/ `QQ_CHANNEL`（频道），EMAIL / WEBHOOK 预留
 - **防刷**：`NOTICE_COOLDOWN`（秒）内同一事件类型只通知一次，内存实现，预留 Redis
 - **模板**：每事件独立模板（`internal/notification/template.go`），缺失字段安全兜底
 
 ## 开发说明
 
-- **新增事件**：在 `internal/bot/event.go` 注册回调 → 在 `internal/bot/handler.go` 增加分发方法 → 在 `message` 层实现业务逻辑
-- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），供通知和 `/wl` 指令回复使用
+- **新增事件**：在 `internal/event/catalog.go` 注册 → `internal/notification/template.go` 增加模板 → 在 `cmd/bot/main.go` 订阅
+- **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），纯文本通知
 - **错误处理**：统一返回 error 并记录日志，禁止 panic（除启动失败）；启动失败由 main 输出 FATAL 退出
 - **测试**：`go test ./...`（配置 / 事件注册 / 消息收发均有单测）
 
@@ -195,7 +187,7 @@ systemctl enable --now lumibot
 ## QQ 机器人配置说明
 
 1. 前往 [QQ 开放平台](https://q.qq.com) 创建机器人，获取 **AppID** 与 **Secret**
-2. 按需在开放平台开启事件订阅：
+2. 按需在开放平台开启事件订阅（仅用于日志记录与通知接收）：
    - 频道：`AT_MESSAGE_CREATE`（@机器人消息）
    - 群聊：`GROUP_AT_MESSAGE_CREATE`
    - 私聊：`C2C_MESSAGE_CREATE`
@@ -209,10 +201,9 @@ systemctl enable --now lumibot
 
 | 阶段 | 内容 |
 | --- | --- |
-| 第三阶段 | ✅ 指令系统：已实现 `/bind` OpenID 获取、`/wl` 白名单状态查询和 `/ban` 封禁信息查询 |
-| 第四阶段 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
-| 第五阶段 | 事件通知：论坛 / 服务器 / 管理事件订阅与推送到管理员 QQ |
-| 第六阶段 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |
+| 当前 | ✅ 纯通知机器人：白名单申请 / 自动通过 / 服务器状态 / 系统警告推送 |
+| 后续 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
+| 后续 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |
 
 CI 流程、分支规范与 Branch Protection 配置见 [docs/CI.md](docs/CI.md)，架构设计见 [docs/architecture.md](docs/architecture.md)。
 

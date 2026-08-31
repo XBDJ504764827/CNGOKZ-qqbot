@@ -31,7 +31,8 @@ Notification Service（internal/notification/service.go）
 | `SERVER_ONLINE` | 服务器恢复 | info | `NOTICE_COOLDOWN` | 游戏服务器恢复 |
 | `SYSTEM_WARNING` | 系统警告 | warning | `NOTICE_COOLDOWN` | 系统资源 / 服务告警 |
 | `FORUM_REPORT_CREATED` | 论坛举报 | warning | `NOTICE_COOLDOWN` | 论坛新举报 |
-| `WHITELIST_REQUEST_CREATED` | 新白名单申请 | warning | 不抑制（按事件 ID 去重） | LumiAdmin 白名单新申请（data：nickname / steamid64 / contact / openids） |
+| `WHITELIST_REQUEST_CREATED` | 新白名单申请 | warning | 不抑制（按事件 ID 去重） | LumiAdmin 白名单新申请（data：nickname_show / steamid64 / risk_display / ban_flags / ban_reason / auto_approve_text） |
+| `WHITELIST_AUTO_APPROVED` | 白名单自动通过 | info | `NOTICE_COOLDOWN` | 低风险白名单申请自动通过（默认不通知，仅记录） |
 | `ADMIN_ACTION` | 管理操作 | error | 无 | 审计用途，**默认不通知**（规则 `Enabled=false`） |
 
 规则要点：
@@ -97,21 +98,30 @@ KZ服务器01停止响应
 | `EMAIL` | ⏳ 预留 | - | 邮件通知 |
 | `WEBHOOK` | ⏳ 预留 | - | Webhook 通知 |
 
-## 5. 白名单 QQ 聊天审批（按钮）
+## 5. 通知定位（QQ 仅作通知渠道）
 
-当配置了 LumiAdmin 回写（`LUMIADMIN_CALLBACK_URL` + `LUMIADMIN_QQ_TOKEN`）时，白名单申请通知会附带「通过 ✅ / 拒绝 ❌」按钮：
+LumiBot 是纯通知机器人：所有事件通知均为**纯文本推送**，不附带按钮、不提供任何 QQ 内交互（无按钮审批、无指令系统）。审批与业务操作全部在 LumiAdmin 后台完成。
+
+白名单申请通知示例：
 
 ```
-[新白名单申请] 玩家: 张三  ...
-[通过 ✅] [拒绝 ❌]
-```
+🚨 白名单申请
 
-- **点「通过」**：LumiBot 调用 LumiAdmin `POST /api/integration/qq/whitelist/:id/review`，提交 `approve` + 管理员 openid，渠道记为 `qq`，操作人记为后台管理员显示名。
-- **点「拒绝」**：LumiBot 反问「请回复拒绝原因」，管理员打字回复后带原因提交 `reject`。
-- **授权**：按钮点击的授权由 LumiAdmin 审批接口实时校验（按 openid 查 `users` 表，需已绑定 openid、启用、角色为 developer/admin/normal）。**所有已绑定 openid 的管理员均可操作所有申请的按钮**，不依赖通知发送时的定向名单快照，因此 bot 重启后旧按钮依然可用；未绑定 openid 或无权限的用户会被 LumiAdmin 拒绝并收到友好提示。
-- **幂等与并发**：同一 `interaction_id` 在 10 分钟内只处理一次；同一申请在单个 LumiBot 实例内同一时刻只允许一个审批回写。多实例和跨进程并发仍由 LumiAdmin 数据库原子条件更新兜底。
-- **审计**：每次收到、拒绝、去重、开始、完成或失败的审批操作都会追加到 `QQ_APPROVAL_AUDIT_PATH` 指定的 JSONL 文件。生产环境应将该文件路径配置到持久化卷并纳入日志采集。
-- **未配置**：无 `LUMIADMIN_CALLBACK_URL` / `LUMIADMIN_QQ_TOKEN` 时，仅发纯文本通知，不启用按钮审批。
+👤 玩家：111
+🆔 SteamID：76561199111587418
+
+⚠️ 风险：🔴 高风险
+🚫 封禁：全球封禁 / 未解封
+
+原因：
+bhop_hack - 1's or 2's scroll pattern
+
+🤖 自动通过：3小时无人审核自动通过
+
+⏰ 时间：2026-08-31 06:21
+
+👉 请管理员审核
+```
 
 ## 6. 通知日志
 

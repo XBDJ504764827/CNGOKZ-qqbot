@@ -69,33 +69,37 @@ var builtinTemplates = map[string]eventTemplate{
 	},
 	event.EventWhitelistRequestCreated: {
 		title: "新白名单申请",
-		body: `[新白名单申请]
+		body: `📩 白名单申请
+
+👤 {{get .Data "nickname_show"}}
+🆔 {{get .Data "steamid64"}}
+
+风险：{{get .Data "risk_display"}}
+封禁：{{get .Data "ban_flags"}}
+{{- if eq (get .Data "ban_reason") "-"}}{{else}}
+
+违规：
+{{get .Data "ban_reason"}}
+{{- end}}
+
+自动审核：{{get .Data "auto_approve_text"}}
+
+时间：{{.TimeText}}
+{{- if ne (get .Data "detail_url") "-"}}
+
+🔗 点击查看详情：{{get .Data "detail_url"}}
+{{- end}}`,
+	},
+	event.EventWhitelistAutoApproved: {
+		title: "白名单自动通过",
+		body: `[白名单自动通过]
 
 玩家: {{get .Data "nickname"}}
 SteamID: {{get .Data "steamid64"}}
-联系方式: {{get .Data "contact"}}
 
-Steam等级: {{get .Data "steam_level"}}
-KZT rating: {{get .Data "ratings" "kzt"}}
-SKZ rating: {{get .Data "ratings" "skz"}}
-VNL rating: {{get .Data "ratings" "vnl"}}
-OVR rating: {{get .Data "ratings" "ovr"}}
+低风险玩家，申请满 {{get .Data "hours"}} 小时无人审核，系统已自动通过。
 
-本地封禁: {{get .Data "has_local_ban"}}
-{{- if eq (get .Data "local_ban_reason") "-"}}{{else}}
-本地封禁原因: {{get .Data "local_ban_reason"}}
-{{- end}}
-全球封禁: {{get .Data "has_global_ban"}}
-未解封: {{get .Data "has_active_ban"}}
-{{- if eq (get .Data "active_ban_reason") "-"}}{{else}}
-当前封禁原因: {{get .Data "active_ban_reason"}}
-{{- end}}
-
-Steam地址: {{get .Data "profile_url"}}
-时间: {{.TimeText}}
-
-{{.Message}}
-请管理员审核。`,
+时间: {{.TimeText}}`,
 	},
 }
 

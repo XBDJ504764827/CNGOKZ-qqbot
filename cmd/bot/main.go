@@ -19,13 +19,11 @@ import (
 
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
-	"github.com/XBDJ504764827/LumiBot/internal/command"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
-	"github.com/XBDJ504764827/LumiBot/internal/qqapproval"
 )
 
 // main 启动流程：
@@ -33,6 +31,9 @@ import (
 //	加载配置 → 初始化 Logger → 创建 Bot Client → 注册事件 Handler → 连接 QQ Gateway
 //
 // 监听 SIGINT / SIGTERM，优雅关闭（关闭 Gateway 连接、HTTP 服务）。
+//
+// QQ 机器人仅作为通知渠道（纯文本推送），不提供任何交互操作（无按钮审批、
+// 无指令系统），审批与业务操作全部在 LumiAdmin 后台完成。
 func main() {
 	// 1. 加载配置（.env 文件 + 环境变量）
 	cfg, err := config.Load()
@@ -52,56 +53,22 @@ func main() {
 
 	// 4. 依赖装配（依赖注入）
 	openAPI := bot.NewOpenAPI(cfg.Bot, cfg.Env, zapLogger)    // 创建 Bot Client 基础：openapi
-	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力
+	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力（纯通知）
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 
-	// QQ 指令审计单独存储，避免与白名单审批审计混在同一个文件。
-	commandAuditor, err := command.NewFileAuditor(cfg.LumiAdmin.CommandAuditPath)
-	if err != nil {
-		fatalf("初始化 QQ 指令审计失败: %v", err)
-	}
-	defer func() { _ = commandAuditor.Close() }()
-	bindCommand := command.NewBindHandler(sender, commandAuditor, zapLogger)
-	receiver.OnCommand = command.NewRouter(bindCommand).Handle
-
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
-
-	// QQ 聊天审批服务（白名单按钮审批 → 回写 LumiAdmin）
-	approvalAuditor, err := qqapproval.NewFileAuditor(cfg.LumiAdmin.ApprovalAuditPath)
-	if err != nil {
-		fatalf("初始化 QQ 审批审计失败: %v", err)
-	}
-	defer func() { _ = approvalAuditor.Close() }()
-
-	approvalSvc, err := qqapproval.New(qqapproval.Options{
-		Sender:           sender,
-		InteractionAcker: openAPI,
-		Auditor:          approvalAuditor,
-		BaseURL:          cfg.LumiAdmin.CallbackBaseURL,
-		Token:            cfg.LumiAdmin.IntegrationToken,
-	}, zapLogger)
-	if err != nil {
-		fatalf("初始化 QQ 审批服务失败: %v", err)
-	}
-	if approvalSvc.Enabled() {
-		// 按钮点击 → 审批
-		botHandler.SetInteractionHandler(approvalSvc.HandleInteraction)
-		// 私聊文本 → 「等待填拒绝原因」时消费
-		receiver.OnUserText = approvalSvc.HandleUserText
-	} else {
-		zapLogger.Warn("LumiAdmin 审批未配置（LUMIADMIN_CALLBACK_URL / LUMIADMIN_QQ_TOKEN），按钮审批已禁用")
-	}
 
 	// 统一事件系统：Event Bus + 通知服务（订阅关键事件，规则/模板/冷却见 internal/notification）
 	eventBus := event.NewMemoryBus(zapLogger)
-	notifyService := notification.NewServiceWithButtons(cfg.Notification, sender, approvalSvc, zapLogger)
+	notifyService := notification.NewService(cfg.Notification, sender, zapLogger)
 	eventBus.Subscribe(event.EventSystemWarning, notifyService)
 	eventBus.Subscribe(event.EventServerOffline, notifyService)
 	eventBus.Subscribe(event.EventServerOnline, notifyService)
 	eventBus.Subscribe(event.EventForumReportCreated, notifyService)
 	eventBus.Subscribe(event.EventAdminAction, notifyService)
 	eventBus.Subscribe(event.EventWhitelistRequestCreated, notifyService)
+	eventBus.Subscribe(event.EventWhitelistAutoApproved, notifyService)
 
 	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus)
 

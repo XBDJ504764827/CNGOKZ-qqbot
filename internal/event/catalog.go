@@ -11,6 +11,7 @@ const (
 	EventForumReportCreated      = "FORUM_REPORT_CREATED"      // 论坛新举报
 	EventAdminAction             = "ADMIN_ACTION"              // 管理操作
 	EventWhitelistRequestCreated = "WHITELIST_REQUEST_CREATED" // LumiAdmin 白名单新申请
+	EventWhitelistAutoApproved   = "WHITELIST_AUTO_APPROVED"   // 低风险白名单自动通过
 )
 
 // 事件来源（Source）常量 —— 记录事件来自哪个外部系统。
@@ -29,6 +30,7 @@ var eventTitles = map[string]string{
 	EventForumReportCreated:      "论坛举报",
 	EventAdminAction:             "管理操作",
 	EventWhitelistRequestCreated: "新白名单申请",
+	EventWhitelistAutoApproved:   "白名单自动通过",
 }
 
 // KnownEventTypes 返回全部已知事件类型。

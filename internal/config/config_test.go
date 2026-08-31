@@ -69,8 +69,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Bot.Timeout != 5*time.Second {
 		t.Errorf("Bot.Timeout = %v, want %v", cfg.Bot.Timeout, 5*time.Second)
 	}
-	if cfg.LumiAdmin.CommandAuditPath != "logs/qq-command-audit.jsonl" {
-		t.Errorf("CommandAuditPath = %q, want default path", cfg.LumiAdmin.CommandAuditPath)
+	if cfg.Notification.PrivateTarget != "" {
+		t.Errorf("PrivateTarget = %q, want default empty", cfg.Notification.PrivateTarget)
 	}
 }
 
