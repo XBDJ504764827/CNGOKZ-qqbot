@@ -19,6 +19,7 @@ import (
 
 	"github.com/XBDJ504764827/LumiBot/internal/api"
 	"github.com/XBDJ504764827/LumiBot/internal/bot"
+	"github.com/XBDJ504764827/LumiBot/internal/command"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
@@ -32,8 +33,9 @@ import (
 //
 // 监听 SIGINT / SIGTERM，优雅关闭（关闭 Gateway 连接、HTTP 服务）。
 //
-// QQ 机器人仅作为通知渠道（纯文本推送），不提供任何交互操作（无按钮审批、
-// 无指令系统），审批与业务操作全部在 LumiAdmin 后台完成。
+// QQ 机器人作为通知渠道（纯文本推送），不提供按钮审批等交互操作；
+// 唯一保留的 QQ 指令是 /bind（获取用户 QQ OpenID，供用户在网站自助绑定），
+// 审批与业务操作全部在 LumiAdmin 后台完成。
 func main() {
 	// 1. 加载配置（.env 文件 + 环境变量）
 	cfg, err := config.Load()
@@ -52,9 +54,23 @@ func main() {
 	botgo.SetLogger(logger.NewBotgoAdapter(zapLogger))
 
 	// 4. 依赖装配（依赖注入）
-	openAPI := bot.NewOpenAPI(cfg.Bot, cfg.Env, zapLogger)    // 创建 Bot Client 基础：openapi
-	sender := message.NewSender(openAPI, zapLogger)           // 消息发送能力（纯通知）
-	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
+	openAPI := bot.NewOpenAPI(cfg.Bot, cfg.Env, zapLogger) // 创建 Bot Client 基础：openapi
+	sender := message.NewSender(openAPI, zapLogger)        // 消息发送能力（纯通知）
+	receiver := message.NewReceiver(zapLogger)             // 消息接收处理
+
+	// /bind：用户私聊机器人获取 QQ OpenID（供网站自助绑定）；仅私聊回复，群聊/频道静默忽略。
+	// QQ 群绑定：用户在群内 @机器人 发送绑定码，自动完成 Steam ↔ QQ 绑定。
+	router := command.NewRouter(
+		command.NewBindHandler(sender, zapLogger),
+		command.NewQQBindHandler(command.QQBindHandlerOptions{
+			Sender:   sender,
+			Logger:   zapLogger,
+			APIURL:   cfg.LumiAdmin.APIURL,
+			APIToken: cfg.LumiAdmin.APIToken,
+		}),
+	)
+	receiver.OnCommand = router.Handle
+
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)

@@ -41,7 +41,7 @@ LumiBot 是 CNGOKZ 社区生态中的 QQ 官方机器人服务，基于 Go 语�
 │   │   ├── gateway.go         # Gateway：websocket 长连接管理
 │   │   ├── event.go           # QQ 事件注册（含群聊 / 私聊消息）
 │   │   └── handler.go         # QQ 事件业务分发（→ message 层）
-│   ├── command/               # QQ 指令处理（/bind、/wl、/ban）
+│   ├── command/               # QQ 指令处理（/bind：私聊获取 QQ OpenID）
 │   ├── message/
 │   │   ├── sender.go          # QQ 消息发送（频道 / 群 / 私聊）
 │   │   └── receiver.go        # QQ 消息接收处理
@@ -93,14 +93,16 @@ main.go
 | `READY` | 网关连接就绪（打印 bot 信息） | `bot/handler.go OnReady` |
 | `MESSAGE_CREATE` | 频道消息（仅记录日志） | `message/receiver.go` |
 | `AT_MESSAGE_CREATE` | 频道内 @机器人 消息（仅记录日志） | `message/receiver.go` |
-| `C2C_MESSAGE_CREATE` | QQ 私聊消息（仅记录日志） | `message/receiver.go` |
+| `C2C_MESSAGE_CREATE` | QQ 私聊消息（支持 `/bind` 获取 OpenID，其余仅记录日志） | `message/receiver.go` |
 | `GROUP_AT_MESSAGE_CREATE` | QQ 群聊消息（仅记录日志） | `message/receiver.go` |
 | ERROR_NOTIFY | 网关连接异常（内部回调，记录错误日志） | `bot/handler.go OnError` |
 | PLAIN | 未注册事件兑底（透传 debug 日志） | `bot/handler.go OnPlain` |
 
-## 通知定位（QQ 仅作通知渠道）
+## 通知定位（QQ 以通知为主，仅保留 /bind 指令）
 
-LumiBot 是纯通知机器人：事件触发后向管理员 QQ 推送纯文本通知，**不提供任何交互操作**（无按钮审批、无指令系统）。所有审批与业务操作均在 LumiAdmin 后台完成。
+LumiBot 以通知机器人为定位：事件触发后向管理员 QQ 推送纯文本通知，**不提供按钮审批等交互操作**。所有审批与业务操作均在 LumiAdmin 后台完成。
+
+唯一保留的 QQ 指令是 `/bind`：用户私聊机器人发送 `/bind`，机器人回复其 QQ OpenID，供用户复制后在 LumiAdmin 网站的 QQ 绑定页面**自助绑定**（管理员无需再人工收集 OpenID）。详见 [docs/BIND_COMMAND.md](docs/BIND_COMMAND.md)。
 
 收到消息时日志示例：
 
@@ -149,6 +151,7 @@ Event → 规则判断（rule）→ 模板渲染（template）→ 冷却防刷�
 ## 开发说明
 
 - **新增事件**：在 `internal/event/catalog.go` 注册 → `internal/notification/template.go` 增加模板 → 在 `cmd/bot/main.go` 订阅
+- **新增指令**：实现 `command.Handler` → 在 `cmd/bot/main.go` 通过 `command.NewRouter(...)` 挂到 `receiver.OnCommand`
 - **发送消息**：注入 `message.Sender`（`SendChannelMessage` / `SendGroupMessage` / `SendC2CMessage`），纯文本通知
 - **错误处理**：统一返回 error 并记录日志，禁止 panic（除启动失败）；启动失败由 main 输出 FATAL 退出
 - **测试**：`go test ./...`（配置 / 事件注册 / 消息收发均有单测）
@@ -196,12 +199,23 @@ systemctl enable --now lumibot
    - `QQ_TOKEN` 预留（旧式 BotToken 鉴权）
    - `ENV=dev` 连接沙箱，`ENV=prod` 连接正式环境
    - `BOT_DEBUG=true` 开启 SDK 调试输出（生产环境保持 `false`）
+4. 可选：QQ 群绑定（Steam ↔ QQ 联系方式追溯）需配置 LumiAdmin 集成：
+   - `LUMIADMIN_API_URL`：LumiAdmin 后台地址（如 `https://zzzxbdjbans.cngokz.com`）
+   - `LUMIADMIN_API_TOKEN`：与 LumiAdmin 后端 `QQ_INTEGRATION_TOKEN` 一致
+
+## QQ 群绑定（Steam ↔ QQ 联系方式追溯）
+
+玩家在 LumiAdmin 网站完成 Steam 验证后，会获取一次性绑定 UUID（10 分钟有效）；
+玩家将 UUID **@机器人** 发送到 QQ 群，机器人调用 LumiAdmin `POST /api/qq/bind`
+（消息发送者 openid 由机器人自动提取，无法伪造），完成 `steamid64 ↔ qq_openid`
+绑定。绑定后玩家提交白名单申请时自动使用 `qq:<openid>` 作为联系方式，
+管理员在白名单审核页可看到 QQ 绑定标识，便于追溯。
 
 ## 后续开发规划
 
 | 阶段 | 内容 |
 | --- | --- |
-| 当前 | ✅ 纯通知机器人：白名单申请 / 自动通过 / 服务器状态 / 系统警告推送 |
+| 当前 | ✅ 通知机器人 + `/bind` 自助绑定 + QQ 群绑定：白名单申请 / 自动通过 / 服务器状态 / 系统警告推送 |
 | 后续 | 与 LumiAdmin 通信：`POST /api/message/send` 推送管理员通知，接口鉴权 |
 | 后续 | CD 自动化：CI 产物 → 服务器二进制分发（二进制 + systemd 部署） |
 

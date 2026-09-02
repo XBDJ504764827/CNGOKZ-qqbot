@@ -13,6 +13,8 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("HTTP_ADDR", ":9999")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("BOT_DEBUG", "true")
+	t.Setenv("LUMIADMIN_API_URL", "https://admin.example.com")
+	t.Setenv("LUMIADMIN_API_TOKEN", "token-abc")
 
 	cfg, err := Load()
 	if err != nil {
@@ -43,6 +45,12 @@ func TestLoadFromEnv(t *testing.T) {
 	if !cfg.Bot.Debug {
 		t.Errorf("Bot.Debug = %v, want true", cfg.Bot.Debug)
 	}
+	if cfg.LumiAdmin.APIURL != "https://admin.example.com" {
+		t.Errorf("LumiAdmin.APIURL = %q", cfg.LumiAdmin.APIURL)
+	}
+	if cfg.LumiAdmin.APIToken != "token-abc" {
+		t.Errorf("LumiAdmin.APIToken = %q", cfg.LumiAdmin.APIToken)
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -71,6 +79,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Notification.PrivateTarget != "" {
 		t.Errorf("PrivateTarget = %q, want default empty", cfg.Notification.PrivateTarget)
+	}
+	if cfg.LumiAdmin.APIURL != "" || cfg.LumiAdmin.APIToken != "" {
+		t.Errorf("LumiAdmin default = (%q, %q), want empty", cfg.LumiAdmin.APIURL, cfg.LumiAdmin.APIToken)
 	}
 }
 

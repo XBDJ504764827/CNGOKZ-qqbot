@@ -17,6 +17,7 @@ main (cmd/bot)
  ├── bot.NewOpenAPI(cfg)    → openapi.OpenAPI（沙箱/正式 + BOT_DEBUG）
  ├── message.NewSender(api) → *message.Sender（频道/群/私聊发送）
  ├── message.NewReceiver()  → *message.Receiver（消息接收处理）
+ │     └── OnCommand        → command.Router（/bind 指令分发）
  ├── bot.NewHandler(...)    → *bot.Handler（QQ 事件业务分发）
  ├── bot.NewClient(...)     → *bot.Client
  │     └── Start：WS 网关信息 → RegisterEvents → Gateway.Start（自动重连）
@@ -52,9 +53,9 @@ QQ 网关 ──websocket──▶ botgo SDK ──▶ internal/bot/event.go（�
 
 | 方法 | 场景 | 未来调用方 |
 | --- | --- | --- |
-| `SendChannelMessage` | QQ 频道消息 | LumiAdmin / 指令回复 |
+| `SendChannelMessage` | QQ 频道消息 | LumiAdmin |
 | `SendGroupMessage` | 群消息 | LumiAdmin 通知 |
-| `SendC2CMessage` | 私聊 / 管理员通知 | LumiAdmin 通知 |
+| `SendC2CMessage` | 私聊 / 管理员通知 | LumiAdmin 通知 / `/bind` 指令回复 |
 
 ## 6. HTTP 服务
 

@@ -38,8 +38,18 @@ type Config struct {
 	Event EventConfig
 	// Notification 通知系统配置。
 	Notification NotificationConfig
+	// LumiAdmin LumiAdmin 后台集成（QQ 群绑定回调）。
+	LumiAdmin LumiAdminConfig
 	// Log 日志配置。
 	Log LogConfig
+}
+
+// LumiAdminConfig LumiAdmin 后台集成配置。
+type LumiAdminConfig struct {
+	// APIURL LumiAdmin 后台 API 地址（如 https://zzzxbdjbans.cngokz.com）。
+	APIURL string
+	// APIToken QQ 集成令牌，需与 LumiAdmin 的 QQ_INTEGRATION_TOKEN 一致。
+	APIToken string
 }
 
 // BotConfig QQ 官方机器人接入配置。
@@ -133,6 +143,10 @@ func Load() (*Config, error) {
 			Cooldown:      getSecondsDuration("NOTICE_COOLDOWN", 300*time.Second),
 			PrivateTarget: getEnv("NOTIFY_PRIVATE_TARGET", ""),
 			ChannelTarget: getEnv("NOTIFY_CHANNEL_TARGET", ""),
+		},
+		LumiAdmin: LumiAdminConfig{
+			APIURL:   getEnv("LUMIADMIN_API_URL", ""),
+			APIToken: getEnv("LUMIADMIN_API_TOKEN", ""),
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
