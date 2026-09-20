@@ -103,9 +103,9 @@ main.go
 LumiBot 是通知机器人：事件触发后向管理员 QQ 推送纯文本通知，**不提供按钮审批**；
 审批与业务操作均在 LumiAdmin 后台完成。
 
-同时支持**白名单 QQ 群绑定**：玩家在 LumiAdmin 网站生成验证码后，在群内
-@机器人发送该验证码，LumiBot 回传 LumiAdmin 完成 Steam↔QQ 绑定。管理员也可在
-后台玩家详情/审核弹窗点击「群内 @玩家」，由 LumiBot 在群内 @出该玩家。
+同时支持**白名单 QQ 私聊绑定**：玩家添加机器人 QQ 好友后，私聊发送
+LumiAdmin 网站生成的验证码即可完成 Steam↔QQ 绑定；非验证码的玩家私聊
+消息会回传 LumiAdmin，管理员可在后台聊天面板查看并私聊玩家。
 
 启用绑定需在 `.env` 配置：
 
@@ -114,7 +114,7 @@ LUMIADMIN_URL=http://127.0.0.1:3001
 LUMIADMIN_QQ_TOKEN=<与 LumiAdmin 的 QQ_INTEGRATION_TOKEN 一致>
 ```
 
-群内 @玩家 由 LumiAdmin 通过 `POST /api/v1/messages/group-mention`
+管理员私聊由 LumiAdmin 通过 `POST /api/v1/messages/chat`
 （`X-API-Key` 鉴权，复用 `EVENT_API_KEYS`）调用。
 
 收到消息时日志示例：

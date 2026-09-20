@@ -62,15 +62,18 @@ QQ 网关 ──websocket──▶ botgo SDK ──▶ internal/bot/event.go（�
 | --- | --- | --- | --- |
 | `/health` | GET | ✅ 已实现 | 健康检查 |
 | `/api/v1/events` | POST | ✅ 已实现 | 外部系统事件上报（X-API-Key 鉴权） |
-| `/api/v1/messages/group-mention` | POST | ✅ 已实现 | LumiAdmin 后台「群内 @玩家」（X-API-Key 鉴权） |
+| `/api/v1/messages/chat` | POST | ✅ 已实现 | LumiAdmin 后台「私聊玩家」（X-API-Key 鉴权） |
 
-### 白名单 QQ 群绑定
+### 白名单 QQ 私聊绑定
 
-配置 `LUMIADMIN_URL` / `LUMIADMIN_QQ_TOKEN` 后，`GROUP_AT_MESSAGE_CREATE`
-群消息会先交由 `internal/whitelist.Binder` 解析验证码（`WL-XXXXXX`），
+配置 `LUMIADMIN_URL` / `LUMIADMIN_QQ_TOKEN` 后，`C2C_MESSAGE_CREATE`
+私聊消息会先交由 `internal/whitelist.Binder` 解析验证码（`WL-XXXXXX`），
 命中则调用 LumiAdmin `/api/integration/qq/bind/verify` 完成
-`steamid64 ↔ QQ(openid)` 绑定，并在群内回复结果；未命中则仍交给
-`message.Receiver` 记录日志。
+`steamid64 ↔ QQ(openid)` 绑定，并在私聊中被动回复结果；未命中则作为普通
+玩家私聊回传 LumiAdmin（`/api/integration/qq/chat/inbound`）供管理员查看。
+
+> 早期版本使用 QQ 群内 @机器人 绑定，因平台「群主动消息无权限」
+> （40034105）限制改为私聊方案。
 
 ## 7. 统一事件系统
 

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"strings"
 
 	"github.com/tencent-connect/botgo/dto"
 	"go.uber.org/zap"
@@ -9,6 +10,12 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/whitelist"
 )
+
+// ChatRecorder 将玩家私聊消息回传 LumiAdmin 的最小接口。
+// *lumiadmin.Client 天然满足；nil 时跳过记录。
+type ChatRecorder interface {
+	RecordInboundChat(ctx context.Context, openID, content string) error
+}
 
 // Handler 将 QQ 网关事件分发到业务处理层（message 包）。
 //
@@ -19,6 +26,7 @@ type Handler struct {
 	receiver *message.Receiver
 	sender   *message.Sender
 	binder   *whitelist.Binder
+	chat     ChatRecorder
 	logger   *zap.Logger
 }
 
@@ -27,9 +35,15 @@ func NewHandler(receiver *message.Receiver, sender *message.Sender, logger *zap.
 	return &Handler{receiver: receiver, sender: sender, logger: logger}
 }
 
-// WithBinder 注入白名单绑定处理器（可选），用于群内验证码绑定。
+// WithBinder 注入白名单绑定处理器（可选），用于私聊验证码绑定。
 func (h *Handler) WithBinder(binder *whitelist.Binder) *Handler {
 	h.binder = binder
+	return h
+}
+
+// WithChatRecorder 注入玩家私聊消息回传器（可选）。
+func (h *Handler) WithChatRecorder(rec ChatRecorder) *Handler {
+	h.chat = rec
 	return h
 }
 
@@ -59,27 +73,33 @@ func (h *Handler) OnATMessage(ctx context.Context, msg *dto.Message) error {
 }
 
 // OnC2CMessage 分发 C2C_MESSAGE_CREATE 事件：用户私聊机器人。
-// 日志中的 user_id 即用户 openid，可用于配置通知目标（NOTIFY_PRIVATE_TARGET）。
+// 优先交给 Binder 处理验证码绑定；其余私聊消息回传 LumiAdmin
+// （按 openid 归属到 Steam），供管理员聊天面板查看。
 func (h *Handler) OnC2CMessage(ctx context.Context, msg *dto.Message) error {
-	return h.receiver.ReceiveMessage(ctx, msg)
-}
-
-// OnGroupMessage 分发 GROUP_AT_MESSAGE_CREATE 事件：群消息。
-// QQ 官方事件目前只推送 @机器人 的群消息，但指令处理不要求消息正文包含 @。
-// 群消息若包含白名单验证码，则交由 Binder 完成 Steam↔QQ 绑定。
-func (h *Handler) OnGroupMessage(ctx context.Context, msg *dto.Message) error {
+	openID := ""
+	username := ""
+	if msg.Author != nil {
+		openID = msg.Author.ID
+		username = msg.Author.Username
+	}
 	if h.binder != nil {
-		openID := ""
-		username := ""
-		if msg.Author != nil {
-			openID = msg.Author.ID
-			username = msg.Author.Username
-		}
-		handled, err := h.binder.HandleGroupMessage(ctx, msg.GroupID, openID, username, msg.Content)
+		handled, err := h.binder.HandleC2CMessage(ctx, openID, username, msg.Content)
 		if handled {
 			return err
 		}
 	}
+	// 非验证码私聊消息：回传 LumiAdmin 供管理员聊天面板查看
+	if h.chat != nil && openID != "" && strings.TrimSpace(msg.Content) != "" {
+		if err := h.chat.RecordInboundChat(ctx, openID, msg.Content); err != nil {
+			h.logger.Warn("玩家私聊消息回传失败", zap.String("openid", openID), zap.Error(err))
+		}
+	}
+	return h.receiver.ReceiveMessage(ctx, msg)
+}
+
+// OnGroupMessage 分发 GROUP_AT_MESSAGE_CREATE 事件：群消息（仅记录日志）。
+// 白名单验证已改为私聊，群消息不再参与绑定。
+func (h *Handler) OnGroupMessage(ctx context.Context, msg *dto.Message) error {
 	return h.receiver.ReceiveMessage(ctx, msg)
 }
 

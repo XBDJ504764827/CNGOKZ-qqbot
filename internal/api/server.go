@@ -48,10 +48,10 @@ func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.L
 	events = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(events)
 	mux.Handle("POST /api/v1/events", events)
 
-	// LumiAdmin 后台「群内 @玩家」：认证（X-API-Key）→ 业务 Handler
-	var mention http.Handler = NewGroupMentionHandler(sender, logger)
-	mention = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(mention)
-	mux.Handle("POST /api/v1/messages/group-mention", mention)
+	// LumiAdmin 后台「私聊玩家」：认证（X-API-Key）→ 业务 Handler
+	var chat http.Handler = NewChatHandler(sender, logger)
+	chat = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(chat)
+	mux.Handle("POST /api/v1/messages/chat", chat)
 
 	return &Server{
 		httpServer: &http.Server{
