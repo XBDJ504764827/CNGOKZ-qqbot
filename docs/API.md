@@ -8,9 +8,48 @@
 | 接口 | 方法 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
 | `/api/v1/events` | POST | X-API-Key | 事件上报（统一事件系统入口） |
+| `/api/v1/messages/group-mention` | POST | X-API-Key | LumiAdmin 后台「群内 @玩家」 |
 | `/api/integration/qq/whitelist/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 查询白名单状态接口（全部历史记录） |
 | `/api/integration/qq/ban/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 封禁状态接口（网站/全球全部历史） |
 | `/health` | GET | 无 | 健康检查 |
+
+## 0. POST /api/v1/messages/group-mention — 群内 @玩家
+
+供 LumiAdmin 管理员在后台玩家详情/白名单审核弹窗点击「群内 @玩家」时调用。
+LumiBot 在指定 QQ 群内 @出该玩家，用于管理员通过绑定的 QQ 联系到玩家。
+
+请求 Header：
+
+| Header | 必填 | 说明 |
+| --- | --- | --- |
+| `Content-Type` | 是 | `application/json` |
+| `X-API-Key` | 是 | 与事件上报相同的 API Key（`EVENT_API_KEYS`） |
+
+请求 Body：
+
+```json
+{
+  "group_id": "群 openid（绑定时的 qq_group_id，非数字群号）",
+  "mention_openid": "玩家在该群的 openid",
+  "content": "管理员请你查看白名单审核进度，尽快回复。",
+  "operator": "管理员显示名（仅用于日志）"
+}
+```
+
+成功响应（HTTP 200）：
+
+```json
+{"success": true, "message_id": "..."}
+```
+
+失败响应（HTTP 400 / 401 / 502）：
+
+| HTTP 状态 | 场景 |
+| --- | --- |
+| `400` | 参数缺失或内容超过 200 字 |
+| `401` | X-API-Key 缺失或错误 |
+| `502` | QQ 发送失败（如玩家已退群 / 触发平台限流） |
+
 
 ## 1. GET /api/integration/qq/whitelist/status — QQ 查询白名单状态
 

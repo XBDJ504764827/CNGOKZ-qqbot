@@ -36,10 +36,27 @@ type Config struct {
 	HTTP HTTPConfig
 	// Event 统一事件系统配置。
 	Event EventConfig
+	// LumiAdmin LumiAdmin 集成配置（QQ 绑定校验等）。
+	LumiAdmin LumiAdminConfig
 	// Notification 通知系统配置。
 	Notification NotificationConfig
 	// Log 日志配置。
 	Log LogConfig
+}
+
+// LumiAdminConfig LumiAdmin 集成配置。
+type LumiAdminConfig struct {
+	// BaseURL LumiAdmin 后端地址（如 http://127.0.0.1:3001），留空表示禁用集成。
+	BaseURL string
+	// QQToken LumiAdmin 的 QQ 集成令牌（X-QQ-Token）。
+	QQToken string
+	// Timeout 调用 LumiAdmin 的超时时间。
+	Timeout time.Duration
+}
+
+// Enabled 是否启用 LumiAdmin 集成。
+func (c LumiAdminConfig) Enabled() bool {
+	return c.BaseURL != "" && c.QQToken != ""
 }
 
 // BotConfig QQ 官方机器人接入配置。
@@ -127,6 +144,11 @@ func Load() (*Config, error) {
 			APIKeys:    getStringSlice("EVENT_API_KEYS"),
 			RateLimit:  getInt("EVENT_RATE_LIMIT", 100),
 			RateWindow: time.Minute,
+		},
+		LumiAdmin: LumiAdminConfig{
+			BaseURL: strings.TrimRight(getEnv("LUMIADMIN_URL", ""), "/"),
+			QQToken: getEnv("LUMIADMIN_QQ_TOKEN", ""),
+			Timeout: getDuration("LUMIADMIN_TIMEOUT", 5*time.Second),
 		},
 		Notification: NotificationConfig{
 			Enable:        getBool("NOTIFICATION_ENABLE", true),

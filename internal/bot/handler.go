@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/XBDJ504764827/LumiBot/internal/message"
+	"github.com/XBDJ504764827/LumiBot/internal/whitelist"
 )
 
 // Handler 将 QQ 网关事件分发到业务处理层（message 包）。
@@ -17,12 +18,19 @@ import (
 type Handler struct {
 	receiver *message.Receiver
 	sender   *message.Sender
+	binder   *whitelist.Binder
 	logger   *zap.Logger
 }
 
 // NewHandler 构建事件分发器（依赖注入：消息接收器、消息发送器、日志）。
 func NewHandler(receiver *message.Receiver, sender *message.Sender, logger *zap.Logger) *Handler {
 	return &Handler{receiver: receiver, sender: sender, logger: logger}
+}
+
+// WithBinder 注入白名单绑定处理器（可选），用于群内验证码绑定。
+func (h *Handler) WithBinder(binder *whitelist.Binder) *Handler {
+	h.binder = binder
+	return h
 }
 
 // OnReady 分发 READY 事件：网关连接就绪。
@@ -58,7 +66,20 @@ func (h *Handler) OnC2CMessage(ctx context.Context, msg *dto.Message) error {
 
 // OnGroupMessage 分发 GROUP_AT_MESSAGE_CREATE 事件：群消息。
 // QQ 官方事件目前只推送 @机器人 的群消息，但指令处理不要求消息正文包含 @。
+// 群消息若包含白名单验证码，则交由 Binder 完成 Steam↔QQ 绑定。
 func (h *Handler) OnGroupMessage(ctx context.Context, msg *dto.Message) error {
+	if h.binder != nil && h.binder.Enabled() {
+		openID := ""
+		username := ""
+		if msg.Author != nil {
+			openID = msg.Author.ID
+			username = msg.Author.Username
+		}
+		handled, err := h.binder.HandleGroupMessage(ctx, msg.GroupID, openID, username, msg.Content)
+		if handled {
+			return err
+		}
+	}
 	return h.receiver.ReceiveMessage(ctx, msg)
 }
 

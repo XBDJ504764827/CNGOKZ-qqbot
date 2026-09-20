@@ -25,7 +25,7 @@ func newTestEventsServer(t *testing.T, eventCfg config.EventConfig) *Server {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, eventCfg, zap.NewNop(), event.NewMemoryBus(zap.NewNop()))
+	}, eventCfg, zap.NewNop(), event.NewMemoryBus(zap.NewNop()), nil)
 }
 
 func doEventsRequest(t *testing.T, s *Server, apiKey, body string) *httptest.ResponseRecorder {
@@ -161,7 +161,7 @@ func TestEventsIntegration(t *testing.T) {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, config.EventConfig{APIKeys: []string{testAPIKey}}, zap.NewNop(), bus)
+	}, config.EventConfig{APIKeys: []string{testAPIKey}}, zap.NewNop(), bus, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events",
 		strings.NewReader(`{"source":"GameMonitor","event_type":"SERVER_OFFLINE","level":"critical","title":"服务器离线","data":{"server":"KZ-01"}}`))

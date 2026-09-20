@@ -62,7 +62,15 @@ QQ 网关 ──websocket──▶ botgo SDK ──▶ internal/bot/event.go（�
 | --- | --- | --- | --- |
 | `/health` | GET | ✅ 已实现 | 健康检查 |
 | `/api/v1/events` | POST | ✅ 已实现 | 外部系统事件上报（X-API-Key 鉴权） |
-| `/api/message/send` | POST | ⏳ 预留 | LumiAdmin 推送管理员通知 |
+| `/api/v1/messages/group-mention` | POST | ✅ 已实现 | LumiAdmin 后台「群内 @玩家」（X-API-Key 鉴权） |
+
+### 白名单 QQ 群绑定
+
+配置 `LUMIADMIN_URL` / `LUMIADMIN_QQ_TOKEN` 后，`GROUP_AT_MESSAGE_CREATE`
+群消息会先交由 `internal/whitelist.Binder` 解析验证码（`WL-XXXXXX`），
+命中则调用 LumiAdmin `/api/integration/qq/bind/verify` 完成
+`steamid64 ↔ QQ(openid)` 绑定，并在群内回复结果；未命中则仍交给
+`message.Receiver` 记录日志。
 
 ## 7. 统一事件系统
 

@@ -22,8 +22,10 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 	"github.com/XBDJ504764827/LumiBot/internal/logger"
+	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 	"github.com/XBDJ504764827/LumiBot/internal/message"
 	"github.com/XBDJ504764827/LumiBot/internal/notification"
+	"github.com/XBDJ504764827/LumiBot/internal/whitelist"
 )
 
 // main 启动流程：
@@ -57,6 +59,15 @@ func main() {
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 
+	// LumiAdmin 集成：QQ 群内验证码绑定（未配置 LUMIADMIN_URL/QQ_TOKEN 时禁用）
+	adminClient := lumiadmin.NewClient(cfg.LumiAdmin.BaseURL, cfg.LumiAdmin.QQToken, cfg.LumiAdmin.Timeout, zapLogger)
+	if adminClient != nil {
+		botHandler.WithBinder(whitelist.NewBinder(adminClient, sender, zapLogger))
+		zapLogger.Info("LumiAdmin QQ 绑定集成已启用", zap.String("base_url", cfg.LumiAdmin.BaseURL))
+	} else {
+		zapLogger.Info("LumiAdmin QQ 绑定集成未配置（缺少 LUMIADMIN_URL / LUMIADMIN_QQ_TOKEN）")
+	}
+
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)
 
 	// 统一事件系统：Event Bus + 通知服务（订阅关键事件，规则/模板/冷却见 internal/notification）
@@ -70,7 +81,7 @@ func main() {
 	eventBus.Subscribe(event.EventWhitelistRequestCreated, notifyService)
 	eventBus.Subscribe(event.EventWhitelistAutoApproved, notifyService)
 
-	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus)
+	httpServer := api.NewServer(cfg.HTTP, cfg.Event, zapLogger, eventBus, sender)
 
 	// 5. 生命周期管理：监听退出信号，优雅关闭
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
