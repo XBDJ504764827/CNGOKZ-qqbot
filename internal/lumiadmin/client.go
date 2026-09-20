@@ -1,8 +1,9 @@
 // Package lumiadmin 封装对 LumiAdmin 后端的调用。
 //
-// 当前用途：QQ 群内验证码绑定校验 —— 玩家在网站生成验证码后，在群内
-// @机器人 发送验证码，LumiBot 将 QQ openid 与群 ID 回传 LumiAdmin 完成
-// Steam↔QQ 绑定。
+// 用途：
+//   - 私聊验证码绑定：玩家在网站生成验证码后，私聊机器人发送验证码，
+//     LumiBot 将 QQ openid 回传 LumiAdmin 完成 Steam↔QQ 绑定；
+//   - 玩家私聊消息回传：按 openid 归属到 Steam，供管理员聊天面板查看。
 package lumiadmin
 
 import (
@@ -50,7 +51,6 @@ func NewClient(baseURL, token string, timeout time.Duration, logger *zap.Logger)
 type BindVerifyRequest struct {
 	Code       string `json:"code"`
 	QQOpenID   string `json:"qq_openid"`
-	QQGroupID  string `json:"qq_group_id"`
 	QQUsername string `json:"qq_username,omitempty"`
 }
 
@@ -59,7 +59,6 @@ type BindOutcome struct {
 	Result    string `json:"result"`
 	SteamID64 string `json:"steamid64,omitempty"`
 	QQOpenID  string `json:"qq_openid,omitempty"`
-	QQGroupID string `json:"qq_group_id,omitempty"`
 	Already   bool   `json:"already,omitempty"`
 	Max       int    `json:"max,omitempty"`
 	Message   string `json:"message,omitempty"`
@@ -100,4 +99,43 @@ func (c *Client) VerifyAndBind(ctx context.Context, req BindVerifyRequest) (Bind
 		return BindOutcome{}, fmt.Errorf("解析绑定响应失败: %w", err)
 	}
 	return parsed.Outcome, nil
+}
+
+// ChatInboundRequest 玩家私聊消息回传请求体。
+type ChatInboundRequest struct {
+	QQOpenID string `json:"qq_openid"`
+	Content  string `json:"content"`
+}
+
+// RecordInboundChat 将玩家私聊消息回传 LumiAdmin（按 openid 归属到 Steam）。
+func (c *Client) RecordInboundChat(ctx context.Context, openID, content string) error {
+	return c.recordInbound(ctx, ChatInboundRequest{QQOpenID: openID, Content: content})
+}
+
+// recordInbound 内部实现：回传玩家私聊消息。
+func (c *Client) recordInbound(ctx context.Context, req ChatInboundRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("序列化私聊消息失败: %w", err)
+	}
+
+	url := c.cfg.BaseURL + "/api/integration/qq/chat/inbound"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("构建私聊消息请求失败: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-QQ-Token", c.cfg.QQToken)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("请求 LumiAdmin 失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024))
+		return fmt.Errorf("LumiAdmin 返回 HTTP %d: %s", resp.StatusCode, string(data))
+	}
+	return nil
 }

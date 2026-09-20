@@ -59,6 +59,18 @@ func (c LumiAdminConfig) Enabled() bool {
 	return c.BaseURL != "" && c.QQToken != ""
 }
 
+// Missing 返回启用集成尚缺的配置项（用于启动日志指明缺少哪个变量）。
+func (c LumiAdminConfig) Missing() []string {
+	var missing []string
+	if c.BaseURL == "" {
+		missing = append(missing, "LUMIADMIN_URL")
+	}
+	if c.QQToken == "" {
+		missing = append(missing, "LUMIADMIN_QQ_TOKEN")
+	}
+	return missing
+}
+
 // BotConfig QQ 官方机器人接入配置。
 type BotConfig struct {
 	// AppID QQ 开放平台机器人 AppID。

@@ -8,15 +8,17 @@
 | 接口 | 方法 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
 | `/api/v1/events` | POST | X-API-Key | 事件上报（统一事件系统入口） |
-| `/api/v1/messages/group-mention` | POST | X-API-Key | LumiAdmin 后台「群内 @玩家」 |
+| `/api/v1/messages/chat` | POST | X-API-Key | LumiAdmin 后台「私聊玩家」 |
 | `/api/integration/qq/whitelist/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 查询白名单状态接口（全部历史记录） |
 | `/api/integration/qq/ban/status` | GET | X-QQ-Token | LumiAdmin 提供的 QQ 封禁状态接口（网站/全球全部历史） |
 | `/health` | GET | 无 | 健康检查 |
 
-## 0. POST /api/v1/messages/group-mention — 群内 @玩家
+## 0. POST /api/v1/messages/chat — 私聊玩家
 
-供 LumiAdmin 管理员在后台玩家详情/白名单审核弹窗点击「群内 @玩家」时调用。
-LumiBot 在指定 QQ 群内 @出该玩家，用于管理员通过绑定的 QQ 联系到玩家。
+供 LumiAdmin 管理员在后台玩家详情/白名单审核弹窗的聊天面板发送消息时调用。
+LumiBot 通过 QQ 私聊（C2C）推送给玩家。玩家 openid 为绑定时记录的 C2C openid；
+若机器人未开通主动消息权限且玩家近期未私聊过，QQ 平台会拒绝（40034105），
+LumiAdmin 会据此提示管理员让玩家先私聊一条消息。
 
 请求 Header：
 
@@ -29,9 +31,8 @@ LumiBot 在指定 QQ 群内 @出该玩家，用于管理员通过绑定的 QQ �
 
 ```json
 {
-  "group_id": "群 openid（绑定时的 qq_group_id，非数字群号）",
-  "mention_openid": "玩家在该群的 openid",
-  "content": "管理员请你查看白名单审核进度，尽快回复。",
+  "openid": "玩家 C2C openid",
+  "content": "你好，请补充一下白名单申请信息",
   "operator": "管理员显示名（仅用于日志）"
 }
 ```
@@ -46,9 +47,16 @@ LumiBot 在指定 QQ 群内 @出该玩家，用于管理员通过绑定的 QQ �
 
 | HTTP 状态 | 场景 |
 | --- | --- |
-| `400` | 参数缺失或内容超过 200 字 |
+| `400` | 参数缺失或内容超过 500 字 |
 | `401` | X-API-Key 缺失或错误 |
-| `502` | QQ 发送失败（如玩家已退群 / 触发平台限流） |
+| `502` | QQ 发送失败（主动消息无权限 / 平台限流等） |
+
+## 0.1 白名单 QQ 私聊绑定与玩家消息回传
+
+玩家添加机器人 QQ 后私聊发送验证码（`WL-XXXXXX`），LumiBot 调用 LumiAdmin
+`/api/integration/qq/bind/verify` 完成绑定，并**被动回复**结果。
+非验证码的玩家私聊消息由 LumiBot 回传 LumiAdmin
+`/api/integration/qq/chat/inbound`，按 openid 归属到 Steam 供管理员查看。
 
 
 ## 1. GET /api/integration/qq/whitelist/status — QQ 查询白名单状态

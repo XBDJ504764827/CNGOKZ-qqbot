@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/tencent-connect/botgo/dto"
-	"github.com/tencent-connect/botgo/dto/message"
 	"github.com/tencent-connect/botgo/openapi/options"
 	"go.uber.org/zap"
 )
@@ -60,6 +59,12 @@ func (s *Sender) SendChannelMessage(ctx context.Context, channelID, content stri
 
 // SendGroupMessage 发送 QQ 群消息（groupID 为群 openid）。
 func (s *Sender) SendGroupMessage(ctx context.Context, groupID, content string) (*dto.Message, error) {
+	return s.SendGroupReply(ctx, groupID, "", content)
+}
+
+// SendGroupReply 发送 QQ 群消息；msgID 非空时作为被动回复（回复该消息），
+// 为空时是主动消息（受 QQ 平台主动消息权限限制，可能失败）。
+func (s *Sender) SendGroupReply(ctx context.Context, groupID, msgID, content string) (*dto.Message, error) {
 	if err := validateTarget(groupID); err != nil {
 		return nil, fmt.Errorf("发送群消息: %w", err)
 	}
@@ -67,48 +72,23 @@ func (s *Sender) SendGroupMessage(ctx context.Context, groupID, content string) 
 		return nil, fmt.Errorf("发送群消息: %w", err)
 	}
 
-	msg, err := s.api.PostGroupMessage(ctx, groupID, &dto.MessageToCreate{Content: content})
+	toCreate := &dto.MessageToCreate{Content: content}
+	if msgID != "" {
+		toCreate.MsgID = msgID
+	}
+	msg, err := s.api.PostGroupMessage(ctx, groupID, toCreate)
 	if err != nil {
-		s.logger.Error("发送群消息失败", zap.String("group_id", groupID), zap.Error(err))
+		s.logger.Error("发送群消息失败",
+			zap.String("group_id", groupID),
+			zap.String("msg_id", msgID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	s.logger.Info("群消息发送成功",
 		zap.String("group_id", groupID),
 		zap.String("message_id", msg.ID),
-	)
-	return msg, nil
-}
-
-// SendGroupMention 在 QQ 群内 @指定用户发送消息（mentionOpenID 为该群场景的 openid）。
-//
-// 群内 @ 的文本格式为 `<@openid>`（与频道 <@!id> 不同），见 botgo
-// dto/message.MentionUser。只能 @ 同一群内的成员，跨群无效。
-func (s *Sender) SendGroupMention(ctx context.Context, groupID, mentionOpenID, content string) (*dto.Message, error) {
-	if err := validateTarget(groupID); err != nil {
-		return nil, fmt.Errorf("发送群内@消息: %w", err)
-	}
-	if err := validateTarget(mentionOpenID); err != nil {
-		return nil, fmt.Errorf("发送群内@消息: %w", err)
-	}
-
-	mention := message.MentionUser(mentionOpenID)
-	full := mention
-	if content != "" {
-		full = mention + " " + content
-	}
-
-	msg, err := s.api.PostGroupMessage(ctx, groupID, &dto.MessageToCreate{Content: full})
-	if err != nil {
-		s.logger.Error("发送群内@消息失败",
-			zap.String("group_id", groupID),
-			zap.String("openid", mentionOpenID),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-	s.logger.Info("群内@消息发送成功",
-		zap.String("group_id", groupID),
-		zap.String("message_id", msg.ID),
+		zap.Bool("passive", msgID != ""),
 	)
 	return msg, nil
 }
