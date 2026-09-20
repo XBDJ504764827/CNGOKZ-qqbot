@@ -18,6 +18,7 @@ import (
 	"github.com/XBDJ504764827/LumiBot/internal/auth"
 	"github.com/XBDJ504764827/LumiBot/internal/config"
 	"github.com/XBDJ504764827/LumiBot/internal/event"
+	"github.com/XBDJ504764827/LumiBot/internal/message"
 )
 
 // Server 内置 HTTP 服务。
@@ -27,7 +28,7 @@ type Server struct {
 }
 
 // NewServer 构建 HTTP 服务并注册路由（依赖注入：事件总线 + 事件 API 配置）。
-func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.Logger, bus event.Bus) *Server {
+func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.Logger, bus event.Bus, sender *message.Sender) *Server {
 	mux := http.NewServeMux()
 
 	// 健康检查
@@ -47,8 +48,10 @@ func NewServer(cfg config.HTTPConfig, eventCfg config.EventConfig, logger *zap.L
 	events = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(events)
 	mux.Handle("POST /api/v1/events", events)
 
-	// 预留：LumiAdmin 通知推送
-	// mux.HandleFunc("POST /api/message/send", s.handleMessageSend)
+	// LumiAdmin 后台「群内 @玩家」：认证（X-API-Key）→ 业务 Handler
+	var mention http.Handler = NewGroupMentionHandler(sender, logger)
+	mention = auth.NewAuthenticator(eventCfg.APIKeys).Middleware(logger)(mention)
+	mux.Handle("POST /api/v1/messages/group-mention", mention)
 
 	return &Server{
 		httpServer: &http.Server{

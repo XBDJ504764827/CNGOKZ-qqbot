@@ -20,7 +20,7 @@ func newTestServer(t *testing.T) *Server {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, config.EventConfig{}, zap.NewNop(), event.NewMemoryBus(zap.NewNop()))
+	}, config.EventConfig{}, zap.NewNop(), event.NewMemoryBus(zap.NewNop()), nil)
 }
 
 func TestHealth(t *testing.T) {
