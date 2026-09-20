@@ -92,3 +92,31 @@ func TestLoadInvalidEnv(t *testing.T) {
 		t.Fatal("Load() expected error for invalid ENV, got nil")
 	}
 }
+
+func TestLumiAdminMissing(t *testing.T) {
+	cases := []struct {
+		baseURL string
+		token   string
+		want    []string
+	}{
+		{"", "", []string{"LUMIADMIN_URL", "LUMIADMIN_QQ_TOKEN"}},
+		{"http://127.0.0.1:3001", "", []string{"LUMIADMIN_QQ_TOKEN"}},
+		{"", "secret", []string{"LUMIADMIN_URL"}},
+		{"http://127.0.0.1:3001", "secret", nil},
+	}
+	for _, tc := range cases {
+		cfg := LumiAdminConfig{BaseURL: tc.baseURL, QQToken: tc.token}
+		got := cfg.Missing()
+		if len(got) != len(tc.want) {
+			t.Fatalf("Missing() = %v, want %v", got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("Missing()[%d] = %q, want %q", i, got[i], tc.want[i])
+			}
+		}
+		if cfg.Enabled() != (len(tc.want) == 0) {
+			t.Errorf("Enabled() = %v, want %v", cfg.Enabled(), len(tc.want) == 0)
+		}
+	}
+}

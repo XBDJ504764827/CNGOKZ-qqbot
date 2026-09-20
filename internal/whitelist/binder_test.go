@@ -1,7 +1,10 @@
 package whitelist
 
 import (
+	"context"
 	"testing"
+
+	"go.uber.org/zap"
 
 	"github.com/XBDJ504764827/LumiBot/internal/lumiadmin"
 )
@@ -60,5 +63,18 @@ func TestBinderDisabledWithoutClient(t *testing.T) {
 	b := NewBinder(nil, nil, nil)
 	if b.Enabled() {
 		t.Fatal("binder with nil client should be disabled")
+	}
+}
+
+// TestBinderDisabledRepliesToCode 验证集成未启用但收到验证码时仍会给出提示回复，
+// 避免玩家发码后一直等待（handled=true 表示该消息已被消费）。
+func TestBinderDisabledRepliesToCode(t *testing.T) {
+	b := NewBinder(nil, nil, zap.NewNop())
+	if handled, err := b.HandleGroupMessage(context.Background(), "group-1", "openid-1", "玩家", "绑定 WL-7KQ2XA"); !handled || err != nil {
+		t.Fatalf("HandleGroupMessage() = (%v, %v), want (true, nil)", handled, err)
+	}
+	// 非验证码消息不应被消费
+	if handled, _ := b.HandleGroupMessage(context.Background(), "group-1", "openid-1", "玩家", "你好"); handled {
+		t.Fatal("普通消息不应被消费")
 	}
 }

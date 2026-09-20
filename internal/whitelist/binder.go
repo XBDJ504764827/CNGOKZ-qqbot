@@ -37,8 +37,11 @@ func (b *Binder) Enabled() bool {
 
 // HandleGroupMessage 尝试从群消息中解析验证码并完成绑定。
 // 返回 handled 表示该消息是绑定指令（已回复），err 为处理过程中的错误。
+//
+// 即使集成未启用（client 为 nil），只要消息包含验证码也会给出提示回复，
+// 避免玩家在群里发送验证码后毫无反馈、一直等待。
 func (b *Binder) HandleGroupMessage(ctx context.Context, groupID, openID, username, content string) (bool, error) {
-	if !b.Enabled() || groupID == "" {
+	if b == nil || groupID == "" {
 		return false, nil
 	}
 
@@ -46,6 +49,15 @@ func (b *Binder) HandleGroupMessage(ctx context.Context, groupID, openID, userna
 	if match == nil {
 		return false, nil
 	}
+
+	if !b.Enabled() {
+		b.logger.Warn("收到白名单验证码，但 LumiAdmin 集成未启用，无法绑定",
+			zap.String("group_id", groupID),
+		)
+		b.reply(ctx, groupID, "绑定服务暂不可用，请联系管理员检查机器人配置。")
+		return true, nil
+	}
+
 	code := "WL-" + strings.ToUpper(match[1])
 
 	outcome, err := b.client.VerifyAndBind(ctx, lumiadmin.BindVerifyRequest{

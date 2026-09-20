@@ -59,13 +59,16 @@ func main() {
 	receiver := message.NewReceiver(zapLogger)                // 消息接收处理
 	botHandler := bot.NewHandler(receiver, sender, zapLogger) // 注册事件 Handler（业务分发）
 
-	// LumiAdmin 集成：QQ 群内验证码绑定（未配置 LUMIADMIN_URL/QQ_TOKEN 时禁用）
+	// LumiAdmin 集成：QQ 群内验证码绑定（未配置 LUMIADMIN_URL/QQ_TOKEN 时禁用，
+	// 但仍注册 Binder 以便玩家发送验证码时能收到“服务未启用”的提示回复）。
 	adminClient := lumiadmin.NewClient(cfg.LumiAdmin.BaseURL, cfg.LumiAdmin.QQToken, cfg.LumiAdmin.Timeout, zapLogger)
+	botHandler.WithBinder(whitelist.NewBinder(adminClient, sender, zapLogger))
 	if adminClient != nil {
-		botHandler.WithBinder(whitelist.NewBinder(adminClient, sender, zapLogger))
 		zapLogger.Info("LumiAdmin QQ 绑定集成已启用", zap.String("base_url", cfg.LumiAdmin.BaseURL))
 	} else {
-		zapLogger.Info("LumiAdmin QQ 绑定集成未配置（缺少 LUMIADMIN_URL / LUMIADMIN_QQ_TOKEN）")
+		zapLogger.Warn("LumiAdmin QQ 绑定集成未启用：请在 .env 配置缺失项",
+			zap.Strings("missing", cfg.LumiAdmin.Missing()),
+		)
 	}
 
 	botClient := bot.NewClient(cfg, zapLogger, openAPI, botHandler)

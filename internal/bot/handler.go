@@ -68,7 +68,7 @@ func (h *Handler) OnC2CMessage(ctx context.Context, msg *dto.Message) error {
 // QQ 官方事件目前只推送 @机器人 的群消息，但指令处理不要求消息正文包含 @。
 // 群消息若包含白名单验证码，则交由 Binder 完成 Steam↔QQ 绑定。
 func (h *Handler) OnGroupMessage(ctx context.Context, msg *dto.Message) error {
-	if h.binder != nil && h.binder.Enabled() {
+	if h.binder != nil {
 		openID := ""
 		username := ""
 		if msg.Author != nil {
