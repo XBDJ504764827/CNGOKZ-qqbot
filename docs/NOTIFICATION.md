@@ -50,7 +50,7 @@ Notification Service（internal/notification/service.go）
 | --- | --- |
 | `{{.Title}}` | 事件标题 |
 | `{{.Message}}` | 事件描述 |
-| `{{.TimeText}}` | 事件时间（`2006-01-02 15:04`） |
+| `{{.TimeText}}` | 事件时间（中国时区 UTC+8，`2006-01-02 15:04`） |
 | `{{.LevelText}}` | 级别中文（普通 / 警告 / 错误 / 严重） |
 | `{{get .Data "key"}}` | 事件 data 字段取值，缺失时输出 `-` |
 

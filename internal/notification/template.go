@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/XBDJ504764827/LumiBot/internal/event"
 )
@@ -13,7 +14,7 @@ import (
 //
 // 模板变量说明：
 //   - {{.Title}} / {{.Message}}      事件标题 / 描述
-//   - {{.TimeText}}                  事件时间（2006-01-02 15:04）
+//   - {{.TimeText}}                  事件时间（中国时区，2006-01-02 15:04）
 //   - {{.LevelText}}                 级别中文（普通/警告/错误/严重）
 //   - {{get .Data "key"}}            事件 data 字段取值，缺失时输出 "-"
 var builtinTemplates = map[string]eventTemplate{
@@ -116,9 +117,22 @@ type TemplateData struct {
 	event.Event
 }
 
-// TimeText 事件时间（本地时区，分钟精度）。
+// chinaLocation 通知展示使用的时区（中国标准时间 UTC+8）。
+// 事件时间多来自外部系统上报的 UTC（如 LumiAdmin 的 RFC3339 "Z"），
+// 直接格式化会显示 UTC 时间，因此统一转换为中国时区后再展示。
+var chinaLocation = loadChinaLocation()
+
+// loadChinaLocation 加载 Asia/Shanghai；系统缺少 tzdata 时回退到固定 UTC+8 时区。
+func loadChinaLocation() *time.Location {
+	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		return loc
+	}
+	return time.FixedZone("CST", 8*3600)
+}
+
+// TimeText 事件时间（中国时区，分钟精度）。
 func (d TemplateData) TimeText() string {
-	return d.Timestamp.Format("2006-01-02 15:04")
+	return d.Timestamp.In(chinaLocation).Format("2006-01-02 15:04")
 }
 
 // LevelText 事件级别中文。

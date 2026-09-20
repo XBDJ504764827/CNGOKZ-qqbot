@@ -14,7 +14,7 @@ func testEvent(eventType, title, message string, data map[string]interface{}) ev
 		Source:    "GameMonitor",
 		EventType: eventType,
 		Level:     event.LevelCritical,
-		Timestamp: time.Date(2026, 8, 3, 16, 0, 0, 0, time.Local),
+		Timestamp: time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC),
 		Title:     title,
 		Message:   message,
 		Data:      data,
@@ -100,6 +100,29 @@ func TestRender_WhitelistRequest(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf("content missing %q:\n%s", want, content)
 		}
+	}
+}
+
+// TestTimeText_ConvertsUTCToChina 验证 UTC 事件时间转换为中国时区（UTC+8）展示。
+func TestTimeText_ConvertsUTCToChina(t *testing.T) {
+	tmpl := NewTemplates()
+	ev := event.Event{
+		Source:    "LumiAdmin",
+		EventType: event.EventWhitelistRequestCreated,
+		Level:     event.LevelWarning,
+		Timestamp: time.Date(2026, 9, 20, 15, 7, 0, 0, time.UTC),
+		Data: map[string]interface{}{
+			"nickname_show": "K9999",
+			"steamid64":     "76561199174656209",
+			"risk_display":  "🔴 高风险",
+			"ban_flags":     "无",
+			"ban_reason":    "-",
+		},
+	}
+
+	_, content := tmpl.Render(ev)
+	if !strings.Contains(content, "时间：2026-09-20 23:07") {
+		t.Errorf("事件时间应转换为中国时区 23:07:\n%s", content)
 	}
 }
 
